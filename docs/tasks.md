@@ -1,29 +1,86 @@
 # Atomic implementation tasks
 
-All tasks are pending. The [implementation plan](implementation-plan.md)
-defines behavior and the [Docker contract](development-and-ci.md) defines the
-execution environment. Each task produces one reviewable commit with focused
-checks run in Docker. A task is complete only when its listed acceptance checks
-pass; implementation alone does not complete it.
+Implementation and local verification are complete. T0-T11 are complete, T12 is
+locally verified but has no GitHub execution because no remote is configured, and
+T13 is prepared with external publisher setup and publication still remaining.
+The [implementation plan](implementation-plan.md) defines behavior and the
+[Docker contract](development-and-ci.md) defines the execution environment. Each
+task is complete only when its listed acceptance checks pass; implementation
+alone does not complete a task.
 
 ## Ownership and coordination
 
-Use a coordinator plus runtime, telemetry, HTTP, Ninja and test agents. A
-documentation agent may work on the final handoff. These are roles for future
-implementation; no implementation agents have been launched as part of writing
-these documents.
+Implementation used a coordinator plus runtime, telemetry, HTTP, Ninja, delivery,
+fixture/smoke and documentation agents. Module implementation was delegated to
+`opencode-go/deepseek-v4.1-flash`; the root coordinator reviewed, corrected and
+committed the work. The documentation agent owned only `README.md` and `docs/*.md`.
+
+The original plan called for separate branches/worktrees. In practice the agents
+worked in the shared checkout with disjoint file ownership, which avoided merge
+duplication while feature work was still settling. Parallel Docker runs used
+unique Compose project names. Shared-contract or dependency changes went through
+the coordinator; agents did not edit another agent's files concurrently. If work
+returns to branch-based ownership, each task still needs a unique branch and
+Compose project name.
 
 The coordinator owns package metadata, the lockfile, Docker/Compose files,
 workflows, shared contracts and integration conflict resolution. Each coding
-agent owns its module and corresponding focused tests. The test agent owns
-shared fixtures and conformance tests. Request shared-contract/dependency
-changes through the coordinator; do not edit another agent's files concurrently.
+agent owns its module and focused tests; the test agent owns shared fixtures and
+conformance tests. Parallel tasks start once their declared dependencies are
+usable. Resolve an upstream incompatibility before widening versions or adding a
+fallback. Every handoff includes changed files, exact container commands run,
+results and remaining limits. Tasks do not authorize publishing a release.
 
-Give agents separate branches/worktrees and unique Compose project names.
-Parallel tasks start once their declared dependencies are merged. Resolve an
-upstream incompatibility before widening versions or adding a fallback. Every
-handoff includes changed files, exact container commands run, results and any
-remaining limits. Tasks do not authorize publishing a release.
+## Implementation status and evidence
+
+Last reviewed: 2026-10-22. Evidence is limited to files, commits and recorded
+container runs in this checkout.
+
+| Task | Status | Evidence and remaining work |
+| --- | --- | --- |
+| T0 — Package and Docker skeleton | Complete | Commit `b8b0d85`; `Dockerfile`, `compose.yaml`, `pyproject.toml`, `uv.lock`; `dev`/`ci`/`dist` targets and non-root dev image. |
+| T1 — Settings and shared contracts | Complete | Commit `b8b0d85`; `_config.py` and `tests/test_config.py`; defaults, environment precedence, invalid keys/types, exclusions and provider duck contracts covered. |
+| T2 — Providers and OTLP configuration | Complete | Commit `f47c1e5` plus cleanup fixes `07d9a33` and lifecycle shutdown `b495e24`; focused runtime tests are included in the final 227-test suite. |
+| T3 — Telemetry recording core | Complete | Commit `f47c1e5` plus `6d9de1c`; `_telemetry.py` and `tests/test_telemetry.py`; included in the final suite. |
+| T4 — Shared Django fixtures | Complete | Commit `7ce7ea9`; baseline settings, demo settings, plain/Ninja URLconfs and WSGI/ASGI fixtures. |
+| T5 — Buffered Django middleware | Complete | Commit `e4d5e43`; native sync/async middleware and streaming/file lifecycle; included in the final suite. |
+| T6 — Ninja exception hooks | Complete | Commit `b155e29`; `_ninja.py` and `tests/test_ninja.py`; included in the final suite. |
+| T7 — Process lifecycle and cleanup | Complete | Commit `b495e24`; public `instrument_asgi`/`shutdown`, bounded owned-resource cleanup and real Uvicorn lifespan test. |
+| T8 — Ninja operation spans | Complete | Commit `b155e29`; operation spans for input resolution, endpoint and serialization; included in the final suite. |
+| T9 — Streaming and file response lifecycle | Complete | Commit `e4d5e43`; lazy sync/async streaming, early close, cancellation and file-response tests are included in the final suite. |
+| T10 — Installed-app activation | Complete | Commit `4caecca`; middleware insertion, Django exception signal registration, Ninja activation and app-laziness regression test. |
+| T11 — Conformance and collector smoke test | Complete | Commits `8995e82` and `ae4bcc0`; real contrib coexistence and built-wheel live-collector smoke with three SERVER spans, one WARN, one ERROR and both HTTP metrics. |
+| T12 — Container CI and distribution verification | Locally verified; external GitHub unverified | `scripts/check.sh all` passed Ruff, format, ty and 227 tests. Nine Python/Django matrix jobs each passed 225 with 2 skipped; Ninja 1.7.0 and OTel 1.44 baselines each 225 with 2 skipped; plain Django 185 with 42 skipped; API-only 84 with 143 skipped. Wheel/sdist checks pass. CI scripts/workflows are committed in `f07ea9b`; actionlint and self-checks pass. No GitHub run exists because no remote is configured. |
+| T13 — Release workflow and documentation handoff | Prepared; external publisher setup remaining | Release workflow is committed in `f07ea9b` and documentation is updated. Trusted Publisher records, PyPI/TestPyPI environments, repository remote, actual GitHub execution and publication remain external and unverified. |
+
+Final evidence:
+
+- Default locked environment: `scripts/check.sh all` passed Ruff lint, Ruff
+  format, ty and 227 tests, including real OpenTelemetry Django contrib
+  coexistence.
+- Nine Docker matrix combinations (Python 3.12/3.13/3.14 × Django
+  5.2/6.0/6.1): 225 passed, 2 skipped each.
+- Ninja 1.7.0 baseline: 225 passed, 2 skipped. OpenTelemetry 1.44 baseline:
+  225 passed, 2 skipped.
+- Plain Django without Ninja: 185 passed, 42 skipped. API-only without the
+  SDK/exporters: 84 passed, 143 skipped.
+- Compatibility environments omit the contrib integration; both skips cover
+  contrib coexistence, tested in the default locked environment. Missing-extra
+  jobs skip tests requiring the absent optional dependencies.
+- Built-wheel live-collector smoke: passed with three SERVER spans, one WARN
+  validation event, one ERROR exception event and both HTTP metrics.
+- Original wheel and wheel rebuilt from the sdist: clean installs outside the
+  source tree, `twine check --strict` passed and an actual plain-Django request
+  returned HTTP 200.
+
+Committed checkpoints are `528ea2d` (documentation specification), `b8b0d85`
+(foundation settings and Docker), `7ce7ea9` (shared fixtures), `f47c1e5`
+(runtime/telemetry core), `6d9de1c` (metrics error-type parity), `07d9a33`
+(cleanup fix), `b155e29` (Ninja instrumentation), `e4d5e43` (middleware),
+`4caecca` (installed-app activation), `b495e24` (ASGI lifespan shutdown),
+`8995e82` (contrib coexistence), `ae4bcc0` (built-wheel collector smoke),
+`9aaca7e` (optional-dependency test coverage) and `f07ea9b` (CI, distribution
+and release workflows).
 
 ## T0 — Package and Docker skeleton
 
@@ -113,10 +170,20 @@ remaining limits. Tasks do not authorize publishing a release.
 - **Owner:** Runtime agent. **Dependencies:** T2.
 - Complete lazy, per-serving-process initialization and bounded flush/shutdown
   of package-owned resources.
+- Provide the public `instrument_asgi(application)` lifespan wrapper and
+  synchronous `shutdown()` helper. Native Django ASGI does not implement
+  lifespan; the wrapper acknowledges startup without exporter initialization,
+  forwards non-lifespan scopes unchanged, and flushes owned resources on
+  `lifespan.shutdown`. This was added because Uvicorn 0.54 re-raises `SIGTERM`
+  after draining, bypassing `atexit`. Do not intercept signals or claim a flush
+  on every termination path; worker-exit hooks can call `shutdown()` after
+  requests drain.
 - Handle repeated initialization and partial setup failure without accumulating
   resources or closing application-owned providers.
 - **Done:** Subprocess tests in Docker cover repeated calls, concurrent first
-  use, prefork behavior, partial failures and shutdown ownership.
+  use, prefork behavior, partial failures and shutdown ownership. A real Uvicorn
+  subprocess confirms lifespan shutdown, and importing the public helpers works
+  without Ninja or the SDK/exporters.
 
 ## T8 — Ninja operation spans
 
@@ -158,7 +225,9 @@ remaining limits. Tasks do not authorize publishing a release.
   concurrent/excluded requests and standard Django instrumentation coexistence.
 - Implement a bounded local OTLP smoke test against the built wheel, asserting
   all three signals, trace/log correlation and validation-input omission. The
-  coordinator adds the collector/smoke services and telemetry profile.
+  coordinator adds the collector/smoke services and telemetry profile. The
+  collector output is read-only to the smoke service and must start from a fresh
+  volume; stale records fail the check.
 - **Done:** Docker tests meet every release acceptance criterion. Smoke tests
   start from empty output, fail on missing signals and retain useful logs.
 
@@ -198,6 +267,11 @@ remaining limits. Tasks do not authorize publishing a release.
 4. **Integration:** T11 after all feature and lifecycle dependencies.
 5. **Delivery preparation:** T12 → T13. Documentation drafting may start earlier
    against the frozen specification, but final examples use the built wheel.
+
+The actual run followed this dependency order in the shared checkout described
+above. T0-T11 are complete and verified locally. T12 is locally verified with
+GitHub execution unverified, and T13 is prepared pending external publisher
+setup and publication.
 
 Do not dispatch dependent tasks early as independently mergeable work. A failed
 acceptance check stays with its module owner; the coordinator resolves changes

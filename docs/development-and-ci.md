@@ -1,138 +1,267 @@
 # Docker development and CI/CD
 
-This is the implementation contract for the future Docker files and workflows,
-not a description of tooling that already exists. It extends the
-[implementation plan](implementation-plan.md) and is delivered by the
-[atomic tasks](tasks.md).
+This document describes the Docker, compatibility and release tooling that is
+implemented in this checkout. The files are the source of truth: `Dockerfile`,
+`compose.yaml`, `scripts/`, `ops/otel-collector.yaml` and `.github/workflows/`.
+The [implementation plan](implementation-plan.md) records the design, and
+[task status](tasks.md) records what has actually been verified.
 
 ## Development environment
 
-Require Docker Engine/Desktop with Compose v2 and BuildKit. Host Python,
-package managers and virtual environments are not required. Use one Dockerfile
-for local development, CI tests and distribution builds; parameterize the
-Python version with `PYTHON_VERSION`, defaulting to 3.14.
+Require Docker Engine/Desktop with Compose v2 and BuildKit. Host Python, package
+managers and virtual environments are not required.
 
-Use official Python slim images, pin resolved image digests during
-implementation, and pin the uv tool version. Store Python dependencies in
-`pyproject.toml` and commit `uv.lock`. uv supplies one lockfile for the supported
-Python versions; it is a container development tool, not a runtime dependency.
-
-The Dockerfile has these targets:
+The single `Dockerfile` has `dev`, `ci` and `dist` targets. The supported Python
+images are pinned by digest for 3.12, 3.13 and 3.14; `PYTHON_VERSION` defaults to
+`3.14`. uv is installed at a pinned `UV_VERSION` (currently `0.13.5`), and the
+committed `uv.lock` is installed with `uv sync --locked`. Runtime dependencies
+and development tools live under `/opt/venv`, so mounting the checkout at
+`/workspace` does not hide the environment. The development image installs the
+`ninja` and `otlp` extras plus the `dev` dependency group and installs the
+project editable from `/workspace`.
 
 | Target | Purpose |
 | --- | --- |
-| `dev` | Locked development dependencies, editable source install and tools. |
-| `ci` | Same dependency/tool baseline with source copied into the image and no host bind mount. |
+| `dev` | Locked extras/dev group, editable source install, non-root user and tooling. |
+| `ci` | Same dependency/tool baseline with the checkout copied into the image. |
 | `dist` | Export only the wheel and sdist built inside the container. |
 
-Put the environment under `/opt/venv` so mounting source at `/workspace` cannot
-hide it. Add `.dockerignore` entries for Git internals, local environments,
-caches, credentials and existing build output. Do not bake credentials into
-layers. Use a non-root development user with configurable `LOCAL_UID` and
-`LOCAL_GID` so tests and builds do not create root-owned files on the host.
+The `dev` and `ci` images run as a non-root user. `LOCAL_UID` and `LOCAL_GID`
+default to `1000` and can be set at build time so mounted files are not created
+as root on the host. `.dockerignore` excludes Git internals, local environments,
+caches, credentials and build output.
 
-Compose defines `dev`, `collector` and `smoke` services. `dev` mounts the current
-worktree, installs the `ninja`/`otlp` extras and dev dependency group at image
-build time, and runs the shared example/test Django ASGI project by default.
-Publish the development port only on `127.0.0.1`. Rebuild after dependency
-changes. Keep dependency installation out of normal test invocations.
-
-The collector runs only under the `telemetry` profile, accepts OTLP HTTP on
-4318 and writes all three signals to a file export in a shared volume. Use a
-pinned official collector image with the required receiver/exporter components.
-The smoke service waits for collector readiness with a bounded retry, sends
-requests and checks exported records. A timeout must fail the smoke check and
-print diagnostic logs. Ordinary unit tests use in-memory providers and do not
-depend on the collector.
-
-Planned command interface, available after T0/T4/T9:
+Build the development image and start the demo:
 
 ```bash
-docker compose build --build-arg LOCAL_UID="$(id -u)" --build-arg LOCAL_GID="$(id -g)" dev
+docker compose build \
+  --build-arg LOCAL_UID="$(id -u)" \
+  --build-arg LOCAL_GID="$(id -g)" dev
+docker compose up dev
+```
+
+The demo is published only on `127.0.0.1:8000`. The `dev` command selects
+`tests.project.demo_settings` and runs:
+
+```text
+uvicorn tests.project.asgi:application --host 0.0.0.0 --port 8000 --reload
+```
+
+That settings module opts into the installed app and the Ninja URLconf. It is set
+inside the service command only. Ordinary pytest runs use
+`tests.project.settings` from `pyproject.toml`, which intentionally keeps the
+package out of `INSTALLED_APPS` and `MIDDLEWARE`; this preserves plain-Django
+tests and prevents demo configuration from leaking into the suite.
+
+Run the checks inside the mounted development container:
+
+```bash
 docker compose run --rm dev python -m pytest
+docker compose run --rm dev bash scripts/check.sh all
 docker compose run --rm dev python -m ruff check .
 docker compose run --rm dev python -m ruff format --check .
-docker compose run --rm dev ty check src
-docker compose run --rm dev python -m build --no-isolation
-docker compose up dev
-docker compose --profile telemetry up -d collector
+docker compose run --rm dev ty check --python /opt/venv src
+```
+
+`scripts/check.sh` accepts `lint`, `test` or `all` and forwards pytest arguments.
+Its lint mode runs Ruff, Ruff format check and `ty check --python /opt/venv src`.
+The explicit `--python /opt/venv` matters because a host-created `.venv` under the
+mounted checkout can otherwise be detected by ty and produce a `pyvenv.cfg`
+warning.
+
+The image build performs the dependency sync; normal test commands must not
+resync or rewrite the lockfile. Rebuild the image after changing `pyproject.toml`
+or `uv.lock`. uv is used for locking, syncing, exporting requirement sets and
+building distributions; it is a development tool, not a runtime dependency. The
+relevant container commands are:
+
+```bash
+# During the image build (project installed editable from /workspace):
+uv sync --locked --no-install-project --extra ninja --extra otlp --group dev
+uv sync --locked --extra ninja --extra otlp --group dev
+
+# Distribution target:
+uv build --no-build-isolation --out-dir /dist
+uv run --no-sync twine check /dist/*
+```
+
+For a dependency set that differs from the committed lock, use the isolated
+compatibility helper rather than changing `/opt/venv`:
+
+```bash
+docker compose run --rm dev bash -c '
+  COMPAT_EXTRAS=ninja,otlp \
+  scripts/compat.sh "Django~=5.2.0" "django-ninja==1.7.1" &&
+  /tmp/compat-venv/bin/python -m pytest
+'
+```
+
+`scripts/compat.sh` exports the locked dev requirements, removes the locked
+Django/Ninja/OpenTelemetry entries, installs the requested constraints into a
+fresh `/tmp/compat-venv`, and verifies that the package imports from the
+installed distribution rather than `/workspace/src`. It does not modify
+`uv.lock`. The `COMPAT_EXTRAS` value controls which optional extras are installed.
+
+## Distribution checks
+
+Build the wheel and sdist once in Docker and export them:
+
+```bash
+docker build --target dist --output dist .
+```
+
+The `dist` stage uses the locked `uv_build` backend with
+`uv build --no-build-isolation` and runs `twine check`. BuildKit cache mounts
+keep uv downloads out of the exported result. Verify the exported artifacts from
+a clean environment outside the source tree:
+
+```bash
+docker compose run --rm dev python scripts/check-dist.py --self-test
+docker compose run --rm dev python scripts/check-dist.py dist
+```
+
+`scripts/check-dist.py` requires exactly one wheel and one sdist. It runs
+`twine check --strict`, creates a temporary venv, installs the wheel with uv,
+imports it from outside `/workspace`, confirms the import belongs to the
+installed distribution, rebuilds a wheel from the sdist and repeats the import
+check. Remove stale files from `dist` before building if more than one version is
+present.
+
+Final verification installed both the original wheel and the wheel rebuilt from
+the sdist into clean environments outside the source tree. Both passed
+`twine check --strict`, and an actual plain-Django request returned HTTP 200.
+
+## Local collector smoke test
+
+The `telemetry` Compose profile provides:
+
+- `collector-init`: a one-shot root-owned initializer that prepares the shared
+  volume for the collector user;
+- `collector`: the pinned official OpenTelemetry Collector contrib image, running
+  non-root and writing traces, metrics and logs as JSONL;
+- `smoke`: a one-shot non-root service with the built wheel and collector output
+  mounted read-only.
+
+The smoke service installs the wheel from `./dist` into a fresh temporary venv,
+along with the locked runtime requirements and the same Uvicorn version as the
+development image. It starts the smoke ASGI application, requests a success
+route, a Ninja validation failure and an uncaught error, then checks all three
+signals. Assertions cover one SERVER span per route, one validation warning, one
+correlated exception error, validation-input omission and both HTTP metrics.
+
+The final built-wheel live-collector run passed with three SERVER spans, one WARN
+validation event, one ERROR exception event and both `http.server.request.duration`
+and `http.server.active_requests` metrics present.
+
+Run it with a fresh collector volume:
+
+```bash
+docker compose --profile telemetry down -v
+docker compose --profile telemetry up -d --wait collector
 docker compose --profile telemetry run --rm smoke
 docker compose --profile telemetry down -v
 ```
 
-The last command deletes the disposable collector output volume. Run smoke
-checks with a fresh collector output so stale records cannot satisfy assertions.
-Use a distinct Compose project name for each agent worktree to isolate
-containers and volumes; do not start multiple development servers on the same
-published port. Never mount the Docker socket inside project containers.
+The smoke probe rejects non-empty existing signal files rather than letting old
+records satisfy assertions. A repeated run without `down -v` is expected to fail
+with a stale-output diagnostic. The collector output is read-only to the smoke
+container; do not modify or truncate those files while the collector is running.
+On failure, `scripts/smoke.py` prints signal-file sizes and a bounded Uvicorn
+output tail. Collector logs are available with:
+
+```bash
+docker compose --profile telemetry logs collector
+```
+
+Ordinary unit tests use explicit in-memory providers and do not require the
+collector. Tests that exercise global providers, hook installation, fork
+behavior or interpreter shutdown use subprocesses.
 
 ## Continuous integration
 
-Use GitHub Actions on Linux. The runner orchestrates Docker; Python linting,
-typing, tests, package builds and wheel checks execute inside project
-containers. Use Docker Buildx and build caching, with immutable action commit
-references selected at implementation time. Docker documents the supported
-[GitHub Actions integration](https://docs.docker.com/build/ci/github-actions/)
+`.github/workflows/ci.yml` runs on pull requests and pushes to `main`, and is
+reusable from the release workflow. It has read-only repository permissions and
+uses Buildx with GitHub Actions cache. All third-party actions are pinned to
+commit SHAs: `actions/checkout` v7.0.1, `docker/setup-buildx-action` v4.4.1,
+`docker/build-push-action` v7.4.0, `actions/upload-artifact` v7.0.2,
+`actions/download-artifact` v8.0.2 and `pypa/gh-action-pypi-publish` v1.14.3.
+Docker documents the [GitHub Actions integration](https://docs.docker.com/build/ci/github-actions/)
 and [multi-stage build targets](https://docs.docker.com/build/building/multi-stage/).
 
-Run on pull requests and pushes to `main`:
+The jobs are:
 
-1. Validate Compose configuration and build the `ci` image from a clean checkout.
-2. Run Ruff lint/format checks and ty once on the default locked environment.
-3. Run pytest across Python 3.12/3.13/3.14 and Django 5.2/6.0/6.1, selecting the
-   newest patch within each Django series. Test Ninja 1.7.1 in these nine jobs.
-4. Add Python 3.12 + Django 5.2 jobs for Ninja 1.7.0, a plain-Django install
-   without Ninja, an API-only install without the SDK/exporters, and the minimum
-   supported OpenTelemetry 1.44 dependency set.
-5. Run one separate collector smoke job using the default locked dependency set.
-6. Build wheel and sdist once, run `twine check`, rebuild a wheel from the sdist
-   and test both wheel origins in clean containers outside the source tree.
-7. Upload distribution artifacts, test reports, coverage and collector logs as
-   appropriate. Failures must preserve useful diagnostics and clean up services.
+1. **Lint and default environment** — validate `docker compose config`, build the
+   `ci` image, run the `check-dist.py` and `check-release.py` self-tests, then run
+   `scripts/check.sh all` against the committed locked environment.
+2. **Python/Django matrix** — nine jobs for Python 3.12/3.13/3.14 and Django
+   5.2/6.0/6.1, using `Django~=X.0` and Ninja 1.7.1 through `scripts/compat.sh`.
+3. **Compatibility jobs** — four additional environments: Ninja 1.7.0, plain
+   Django without Ninja, API-only without the SDK/exporters, and the minimum
+   OpenTelemetry 1.44 dependency set. These use Python 3.12 and Django 5.2.
+4. **Artifacts** — build wheel/sdist from the `dist` target, verify both wheel
+   origins with `scripts/check-dist.py` outside the source tree, record SHA-256
+   hashes and upload the checked distributions.
+5. **Collector smoke** — download the checked distribution artifact, verify its
+   hashes, start the collector under a unique Compose project name, run the
+   smoke service, capture collector logs, and tear down the profile with `down -v`.
 
-The default environment uses the committed lockfile without modifying it.
-Compatibility jobs resolve their explicit version constraints in an isolated
-environment inside the same container tooling, without rewriting `uv.lock`.
-Invoke that environment's Python directly, avoiding an implicit resync to the
-default dependency set. Do not pass incompatible version constraints silently.
+Compatibility jobs install into `/tmp/compat-venv` and invoke that interpreter
+directly. This avoids an implicit resync to the default dependency set and keeps
+the committed lockfile unchanged. JUnit reports are uploaded when present.
 
-Wheel tests must not import from the source checkout or an editable install.
-Use a temporary Django project outside `/workspace`, install the wheel normally,
-and assert package imports resolve to the installed distribution. Include a
-pure-Django run without optional extras. Feed the built wheel, rather than
-editable source, into the collector smoke test.
+Local verification completed on 2026-10-22:
 
-Tests changing global providers, hook installation or prefork state use
-subprocesses inside the container. Use explicit providers for ordinary tests.
-Do not depend on resetting OpenTelemetry's process-global singleton state.
+- `scripts/check.sh all` passed Ruff lint, Ruff format, ty and 227 tests in the
+  default locked environment. That suite includes the real OpenTelemetry Django
+  instrumentation coexistence coverage.
+- The nine Python/Django Docker jobs (Python 3.12/3.13/3.14 and Django
+  5.2/6.0/6.1) each passed with 225 tests and 2 skips.
+- The Ninja 1.7.0 and OpenTelemetry 1.44 baseline jobs each passed with 225 tests
+  and 2 skips.
+- The plain-Django-without-Ninja job passed with 185 tests and 42 skips; the
+  API-only-without-SDK job passed with 84 tests and 143 skips.
+
+The CI scripts and workflows were locally reviewed; actionlint and the
+distribution/release self-checks pass. They are committed in `f07ea9b`. The
+workflow files have not executed on GitHub because no Git remote is configured,
+so GitHub execution remains unverified.
 
 ## Continuous delivery
 
-The released product is a Python wheel and sdist. Docker is the build and
-verification environment; a deployed service image or container registry is not
-required for this library.
+`.github/workflows/release.yml` is prepared for version tags `vX.Y.Z`:
 
-On a version tag `vX.Y.Z`:
+1. `release-gate` checks out full history, requires the tagged commit to be an
+   ancestor of `origin/main`, and runs `scripts/check-release.py` to verify a
+   normalized PEP 440 version matching `project.version`. Prereleases are
+   identified from the tag.
+2. The reusable CI workflow runs the same container checks on the tagged commit.
+3. Prereleases publish to TestPyPI and stable versions publish to PyPI using the
+   official PyPA container action with OIDC Trusted Publishing and attestations.
+   The downloaded `dist` artifact is checked against `SHA256SUMS`; publishing
+   consumes the exact artifacts produced and verified by CI.
+4. Only the publishing jobs receive `id-token: write` and
+   `attestations: write`. Ordinary test jobs remain read-only.
 
-1. Check that the tag matches package metadata and the commit belongs to `main`.
-2. Run the same container validation, compatibility matrix and artifact checks
-   used for CI against the tagged commit.
-3. Build distributions once in Docker, then smoke-test and retain their hashes.
-   All publishing steps consume those exact artifacts; do not rebuild them.
-4. Publish prerelease versions to TestPyPI and stable versions to PyPI through
-   separate GitHub environments. Use PyPA's official container-based publish
-   action with OIDC Trusted Publishing and attestations.
-5. Keep `id-token: write` confined to the publishing job. Ordinary PR/test jobs
-   have read-only repository permissions and no publishing credentials.
+The publishing flow follows PyPI's documented
+[Trusted Publishing setup](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
+rather than forwarding OIDC tokens into project containers.
 
-The PyPA publishing action is a Docker action; artifact building and testing
-remain in this project's Dockerfile. Use the documented
-[PyPI Trusted Publishing flow](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
-instead of custom forwarding of OIDC tokens into project containers.
+No release has been published, and no publisher records or GitHub environments
+have been created. No Git remote is configured, so no workflow run or GitHub
+release exists. The external setup is still required from a maintainer:
 
-Repository owner, package-name availability and PyPI/TestPyPI publisher records
-must be verified when connecting release workflows. They are not available in
-this empty repository yet. Preparing workflow files is part of implementation;
-creating external publisher records or performing a release is a separate
-maintainer action. Do not add Docker Hub/GHCR publishing, deployment platforms,
-Kubernetes or a dashboard stack to this release.
+- create the GitHub repository/remote and run CI there;
+- create the `testpypi` and `pypi` GitHub environments with the expected
+  protection rules;
+- register Trusted Publishers for the repository, workflow filename
+  `release.yml`, and those environments on TestPyPI/PyPI;
+- confirm ownership and project settings before the first publication.
+
+The package name `django-ninja-opentelemetry` returned HTTP 404 from the PyPI
+JSON API on 2026-10-22, which indicates it was available at that lookup. That is
+not a reservation or a guarantee that it remains available. Repository owner,
+publisher records and final name ownership must be verified when the remote is
+connected.
+
+Docker Hub/GHCR publishing, deployment platforms, Kubernetes and dashboards are
+not part of this release.

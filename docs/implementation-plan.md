@@ -21,6 +21,16 @@ part of this specification.
 DRF is a future integration. Keep Ninja imports out of the shared request and
 telemetry code; do not implement DRF hooks or a generic adapter registry now.
 
+## Implementation status
+
+The plan below has been implemented in this checkout as the modules
+`_config.py`, `_runtime.py`, `_telemetry.py`, `middleware.py`, `_ninja.py`,
+`apps.py` and `_asgi.py`. One installed-app entry remains the normal setup; the
+public lifecycle helpers are an optional addition described below. The
+[task status](tasks.md) table records the final local evidence, external GitHub
+verification and release setup. This is a design record, not a claim that the
+release has been published.
+
 ## FastAPI research baseline
 
 FastAPI's native integration originated in
@@ -86,6 +96,43 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 When the application runs inside Compose, use the collector service address
 `http://collector:4318` instead of `localhost`.
 
+### ASGI lifecycle and shutdown
+
+Native Django ASGI applications do not implement ASGI lifespan. The
+implementation therefore adds two public helpers without changing the
+installed-app setup:
+
+```python
+# asgi.py
+from django.core.asgi import get_asgi_application
+
+from django_ninja_opentelemetry import instrument_asgi
+
+application = instrument_asgi(get_asgi_application())
+```
+
+`instrument_asgi(application)` returns a wrapper that:
+
+- forwards every non-lifespan scope to the original application unchanged;
+- acknowledges `lifespan.startup` without initializing exporters or opening
+  network connections;
+- on `lifespan.shutdown`, calls the synchronous package shutdown in a worker
+  thread and then sends `lifespan.shutdown.complete`.
+
+The synchronous `shutdown()` is exported for WSGI or custom worker-exit hooks
+after requests have drained. It is bounded, idempotent and only flushes/shuts
+down package-owned resources.
+
+This addition was driven by an actual runtime finding: Uvicorn 0.54 re-raises
+`SIGTERM` after its drain sequence, so the normal `atexit` hook is bypassed.
+Relying on `atexit` alone therefore does not guarantee an exporter flush on that
+termination path. The lifespan wrapper provides an explicit shutdown signal.
+The package does not intercept signals and does not claim a flush on every
+possible server-termination path; deployments using another worker should call
+`shutdown()` from the worker's documented exit hook. The installed app alone
+still activates HTTP telemetry and Ninja hooks; the wrapper is recommended for
+reliable ASGI shutdown rather than required for recording.
+
 Use one optional Django setting, `DJANGO_NINJA_OTEL`:
 
 | Key | Default | Meaning |
@@ -109,7 +156,9 @@ DJANGO_NINJA_OTEL = {
 
 Validate setting names and types. Invalid Django settings raise
 `ImproperlyConfigured`; optional exporter setup failures instead warn and skip
-the affected signal. Without configured providers, nothing is exported.
+the affected signal. Without configured providers, nothing is exported. With no
+OTLP endpoint configured, no exporter is installed; the package does not assume
+a default localhost destination.
 
 The installed app inserts its middleware first unless it is explicitly present
 in `MIDDLEWARE` already. Respect an explicit position and handle list or tuple
@@ -129,9 +178,11 @@ hooks and app initialization have separate ownership.
 | `middleware.py` | Synchronous/asynchronous Django request and response lifecycle. |
 | `_ninja.py` | Guarded Ninja hooks and operation instrumentation. |
 | `apps.py` | Middleware insertion, signal registration and hook activation. |
+| `_asgi.py` | Optional ASGI lifespan wrapper and public shutdown path. |
 
-Freeze these internal contracts in T1 so agents can implement their modules
-independently. They are not additional public APIs:
+Freeze these internal contracts so modules can be implemented independently.
+They are internal helpers, not additional public APIs; the only public lifecycle
+addition is `instrument_asgi()`/`shutdown()` documented above:
 
 - `_runtime.get_providers(config)` returns the selected tracer, meter and logger
   providers in that order, initializing optional exporters once per process.
@@ -249,7 +300,10 @@ Initialize export components lazily on first request, once per serving process.
 perform network requests. Preserve configured providers. With explicit
 auto-configuration, add package-owned components where registration is supported;
 warn and skip an unsupported signal. Shut down only resources created by this
-package, once. Do not replace or shut down application-owned providers.
+package, once, through the ASGI lifespan wrapper or an explicit `shutdown()`
+call. Do not replace or shut down application-owned providers. A best-effort
+`atexit` cleanup remains registered, but it is not the documented guarantee for
+server termination paths such as Uvicorn 0.54's post-drain `SIGTERM` re-raise.
 
 Detect standard OpenTelemetry Django middleware and defer HTTP spans and
 metrics to it while retaining Ninja enrichment. Other wrappers use
@@ -274,6 +328,9 @@ Release only when all of these hold:
   exporter components.
 - Existing Django instrumentation produces no second package-owned HTTP span
   or metric measurement.
+- The optional ASGI wrapper forwards non-lifespan scopes unchanged, acknowledges
+  startup, and flushes owned resources once on lifespan shutdown; a real Uvicorn
+  subprocess verifies the shutdown path.
 - Docker-based tests pass across the compatibility matrix, and a local OTLP
   receiver confirms traces, metrics and logs from the built wheel.
 
