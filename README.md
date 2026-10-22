@@ -53,9 +53,7 @@ The development image installs both framework extras from the lockfile and
 uses DRF 3.18.3 by default. Compatibility jobs exercise DRF 3.16.1 and 3.17.2
 on Django 5.2.
 
-> DRF support is currently unreleased on the `feature/drf-support` branch. It is
-> not included in the published `v0.1.0` package; the `drf` extra and examples
-> apply after a release that contains this change.
+> DRF support and the `drf` extra are available starting with `v0.2.0`.
 
 ## Quick start
 
@@ -190,7 +188,7 @@ pip install "django-api-opentelemetry[drf]"
 No DRF settings, view decorators or replacement base classes are required.
 Instrumentation activates lazily in `TelemetryConfig.ready()` and is idempotent.
 Supported releases are DRF 3.16, 3.17 and 3.18; the locked development default
-is 3.18.3. DRF support is not part of the published `v0.1.0` distribution. The
+is 3.18.3. DRF support was added in `v0.2.0`. The
 hooks preserve native dispatch arguments, return values, exception handlers,
 authentication, permissions, throttling, streaming and rendering behavior.
 

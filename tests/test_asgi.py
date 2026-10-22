@@ -207,6 +207,7 @@ _STARTUP_PROBE = """
 import asyncio
 import sys
 import threading
+from importlib.metadata import version
 
 
 class BlockOptionalImports:
@@ -230,7 +231,7 @@ import django_api_opentelemetry as package
 from django.conf import settings
 
 assert not settings.configured
-assert package.__version__ == "0.1.0"
+assert package.__version__ == version("django-api-opentelemetry")
 assert package.shutdown is package._runtime.shutdown
 
 from django_api_opentelemetry import _runtime

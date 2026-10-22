@@ -82,10 +82,9 @@ Committed checkpoints are `528ea2d` (documentation specification), `b8b0d85`
 `9aaca7e` (optional-dependency test coverage) and `f07ea9b` (CI, distribution
 and release workflows).
 
-## DRF support (feature branch)
+## DRF support (`v0.2.0`)
 
-DRF support is an unreleased feature-branch change; it does not alter the
-published `v0.1.0` version or distributions. The frozen contract, supported
+DRF support is included starting with `v0.2.0`. The frozen contract, supported
 versions and privacy limits are in the [DRF support plan](drf-support.md).
 
 | Task | Status | Evidence and remaining work |

@@ -271,8 +271,8 @@ distribution/release self-checks pass. The corrected `v0.1.0` run on commit
 attempt failed because the package metadata used the old distribution name;
 the corrected distributions are now published as `django-api-opentelemetry`.
 
-Current DRF delivery verification in this checkout (unreleased feature branch,
-not part of published `v0.1.0`):
+DRF implementation verification for the integration included in `v0.2.0`
+(recorded before CI hardening added six supply-chain regression tests):
 
 - The updated dev image installs the locked `ninja`, `drf` and `otlp` extras and
   resolves DRF 3.18.3.
