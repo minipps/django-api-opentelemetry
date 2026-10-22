@@ -222,6 +222,13 @@ jobs:
           cache-from: type=gha,scope=ci-3.14
           provenance: false
 
+      # Buildx exports dist as 0700; the runner and verifier use different UIDs.
+      - name: Normalize exported distribution permissions
+        run: |
+          set -euo pipefail
+          chmod 0755 dist
+          chmod 0644 dist/*.whl dist/*.tar.gz
+
       - name: Verify distributions outside the source tree
         run: |
           set -euo pipefail

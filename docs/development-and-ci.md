@@ -110,6 +110,11 @@ Build the wheel and sdist once in Docker and export them:
 docker build --target dist --output dist .
 ```
 
+Buildx creates a relative local-export destination as mode `0700`. CI sets the
+exported directory to `0755` and the wheel and sdist to `0644` so the verifier
+can read them under a different UID. The verifier remains non-root and receives
+the artifacts through a read-only mount.
+
 The `dist` stage uses the locked `uv_build` backend with
 `uv build --no-build-isolation` and runs `twine check`. BuildKit cache mounts
 keep uv downloads out of the exported result. Verify the exported artifacts from
