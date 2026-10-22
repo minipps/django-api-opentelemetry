@@ -13,7 +13,7 @@ requirements=/tmp/smoke-requirements.txt
 
 unset UV_PROJECT_ENVIRONMENT PYTHONPATH DJANGO_SETTINGS_MODULE
 cd /workspace
-uv export --locked --no-dev --extra ninja --extra otlp --no-emit-project \
+uv export --locked --no-dev --extra ninja --extra drf --extra otlp --no-emit-project \
     --format requirements.txt --output-file "$requirements"
 uvicorn_version="$(
     /opt/venv/bin/python -c \

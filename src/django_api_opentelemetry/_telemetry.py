@@ -60,8 +60,10 @@ _SCHEME_ATTRIBUTE = "url.scheme"
 _STATUS_ATTRIBUTE = "http.response.status_code"
 _ERROR_TYPE_ATTRIBUTE = "error.type"
 _VALIDATION_COUNT_ATTRIBUTE = "django_ninja.validation.error_count"
+_DRF_VALIDATION_COUNT_ATTRIBUTE = "django_drf.validation.error_count"
 _EXCEPTION_EVENT_NAME = "http.server.request.exception"
 _VALIDATION_EVENT_NAME = "django_ninja.validation.failed"
+_DRF_VALIDATION_EVENT_NAME = "django_drf.validation.failed"
 _SDK_DISABLED_ENV = "OTEL_SDK_DISABLED"
 
 _HTTP_METHODS = frozenset(
@@ -385,7 +387,11 @@ def operation(
         yield None
         return
 
-    span_name = name if name.startswith("django_ninja.") else f"django_ninja.{name}"
+    span_name = (
+        name
+        if name.startswith(("django_ninja.", "django_drf."))
+        else f"django_ninja.{name}"
+    )
     attributes: dict[str, Any] = {}
     if function is not None:
         module = getattr(function, "__module__", type(function).__module__)
@@ -432,18 +438,30 @@ def operation(
             _warn_once("operation-finish", "Failed to finish operation span", error)
 
 
-def record_validation(state: RequestTelemetry | None, error_count: int) -> None:
+def record_validation(
+    state: RequestTelemetry | None,
+    error_count: int,
+    *,
+    framework: str = "django_ninja",
+) -> None:
     """Emit a warning with the validation count and route only."""
 
     if state is None or state.finished or not state.config.logs or state.logger is None:
         return
 
-    attributes: dict[str, Any] = {_VALIDATION_COUNT_ATTRIBUTE: error_count}
+    if framework == "django_drf":
+        event_name = _DRF_VALIDATION_EVENT_NAME
+        count_attribute = _DRF_VALIDATION_COUNT_ATTRIBUTE
+    else:
+        event_name = _VALIDATION_EVENT_NAME
+        count_attribute = _VALIDATION_COUNT_ATTRIBUTE
+
+    attributes: dict[str, Any] = {count_attribute: error_count}
     if state.route:
         attributes[_ROUTE_ATTRIBUTE] = state.route
     try:
         state.logger.emit(
-            event_name=_VALIDATION_EVENT_NAME,
+            event_name=event_name,
             timestamp=time.time_ns(),
             context=state.context,
             severity_number=SeverityNumber.WARN,

@@ -2,12 +2,12 @@
 # Build an isolated compatibility environment from the committed lockfile.
 #
 # The dev dependency group supplies pinned test tools; compatibility arguments
-# then select the Django/Ninja/OpenTelemetry versions for this job. The project is
-# installed as a normal (non-editable) distribution into /tmp, never into the
-# image's default /opt/venv.
+# then select the Django/Ninja/DRF/OpenTelemetry versions for this job. The
+# project is installed as a normal (non-editable) distribution into /tmp, never
+# into the image's default /opt/venv.
 #
 # Usage: scripts/compat.sh "Django~=5.2.0" "django-ninja==1.7.1" ...
-# Environment: COMPAT_EXTRAS=ninja,otlp, COMPAT_VENV=/tmp/compat-venv
+# Environment: COMPAT_EXTRAS=ninja,drf,otlp, COMPAT_VENV=/tmp/compat-venv
 set -euo pipefail
 
 project="${COMPAT_PROJECT:-/workspace}"
@@ -40,8 +40,8 @@ uv export \
 
 # Runtime packages are controlled by the compatibility arguments below. Keep
 # the dev-group tool pins but drop these so a 5.2 job does not inherit the lock's
-# default Django/OpenTelemetry selection.
-grep -Ev '^(django==|django-ninja==|opentelemetry[-.])' \
+# default Django/DRF/OpenTelemetry selection.
+grep -Ev '^(django==|django-ninja==|djangorestframework==|opentelemetry[-.])' \
     "${dev_requirements}" > "${tools_requirements}"
 
 project_spec="${project}"
@@ -68,6 +68,7 @@ import django_api_opentelemetry
 for name in (
     "Django",
     "django-ninja",
+    "djangorestframework",
     "opentelemetry-api",
     "opentelemetry-sdk",
     "opentelemetry-exporter-otlp-proto-http",

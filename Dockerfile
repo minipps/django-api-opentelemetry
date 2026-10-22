@@ -30,14 +30,14 @@ FROM base AS deps
 COPY pyproject.toml uv.lock README.md ./
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-install-project --extra ninja --extra otlp --group dev
+    uv sync --locked --no-install-project --extra ninja --extra drf --extra otlp --group dev
 
 COPY src ./src
 
 # uv sync installs the source tree editable at /workspace, so a host bind mount
 # cannot hide /opt/venv and local edits remain visible.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --extra ninja --extra otlp --group dev
+    uv sync --locked --extra ninja --extra drf --extra otlp --group dev
 
 FROM deps AS dev
 

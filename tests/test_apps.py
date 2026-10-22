@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 import textwrap
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +58,7 @@ def test_apps_import_does_not_load_activation_modules() -> None:
             import django_api_opentelemetry.apps
 
             loaded = (
+                "django_api_opentelemetry._drf",
                 "django_api_opentelemetry._ninja",
                 "django_api_opentelemetry._telemetry",
                 "django_api_opentelemetry.middleware",
@@ -155,6 +158,152 @@ def test_ready_installs_actual_ninja_hooks_once(
     assert getattr(patched, "_django_ninja_otel_patched", False)
 
 
+def test_ready_installs_actual_drf_hooks_once(
+    app_config: TelemetryConfig, settings: Any
+) -> None:
+    pytest.importorskip("rest_framework")
+
+    from rest_framework.response import Response
+    from rest_framework.views import APIView
+
+    settings.MIDDLEWARE = []
+    app_config.ready()
+    patched = (
+        APIView.dispatch,
+        APIView.initial,
+        APIView.handle_exception,
+        Response.render,
+    )
+
+    app_config.ready()
+
+    assert (
+        APIView.dispatch,
+        APIView.initial,
+        APIView.handle_exception,
+        Response.render,
+    ) == patched
+    assert all(
+        getattr(function, "_django_drf_otel_patched", False) for function in patched
+    )
+
+
+def _reset_drf_install(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Any:
+    from django_api_opentelemetry import _drf
+
+    monkeypatch.setattr(_drf, "_install_attempted", False)
+    monkeypatch.setattr(_drf, "_warned", set())
+    monkeypatch.setattr(_drf, "_warning_lock", threading.Lock())
+    return _drf
+
+
+def test_drf_install_is_silent_without_distribution(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    drf = _reset_drf_install(monkeypatch)
+    monkeypatch.setattr(drf, "_distribution_version", lambda: None)
+
+    with caplog.at_level(logging.WARNING, logger=drf.__name__):
+        drf.install()
+
+    assert caplog.records == []
+    assert drf._install_attempted is True
+
+
+def test_drf_install_warns_once_for_unsupported_version(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    drf = _reset_drf_install(monkeypatch)
+    monkeypatch.setattr(drf, "_distribution_version", lambda: "3.19.0")
+
+    with caplog.at_level(logging.WARNING, logger=drf.__name__):
+        drf.install()
+        drf.install()
+
+    assert len(caplog.records) == 1
+    assert "unsupported version" in caplog.records[0].message
+
+
+@pytest.mark.parametrize(
+    ("installed", "expected"),
+    [
+        ("3.16.1", True),
+        ("3.17.2", True),
+        ("3.18.3", True),
+        ("3.15.9", False),
+        ("3.19.0", False),
+        ("4.0.0", False),
+        ("unknown", False),
+    ],
+)
+def test_drf_version_support(installed: str, expected: bool) -> None:
+    from django_api_opentelemetry import _drf
+
+    assert _drf._version_supported(installed) is expected
+
+
+def test_drf_install_leaves_hooks_untouched_on_signature_mismatch(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    pytest.importorskip("rest_framework")
+
+    from rest_framework.response import Response
+    from rest_framework.views import APIView
+
+    drf = _reset_drf_install(monkeypatch)
+    monkeypatch.setattr(drf, "_distribution_version", lambda: "3.18.3")
+    monkeypatch.setattr(drf, "_signature_matches", lambda *args: False)
+    before = (
+        APIView.dispatch,
+        APIView.initial,
+        APIView.handle_exception,
+        Response.render,
+    )
+
+    with caplog.at_level(logging.WARNING, logger=drf.__name__):
+        drf.install()
+
+    assert (
+        APIView.dispatch,
+        APIView.initial,
+        APIView.handle_exception,
+        Response.render,
+    ) == before
+    assert len(caplog.records) == 1
+    assert "unexpected hook signature" in caplog.records[0].message
+
+
+def test_drf_validation_leaf_count_uses_nested_scalar_leaves() -> None:
+    from django_api_opentelemetry import _drf
+
+    class DetailError(Exception):
+        def __init__(self, detail: Any) -> None:
+            self.detail = detail
+
+    assert (
+        _drf._validation_leaf_count(
+            DetailError(
+                {
+                    "name": ["required"],
+                    "nested": {"value": [1, {"deep": True}]},
+                    "empty": [],
+                }
+            )
+        )
+        == 3
+    )
+    assert _drf._validation_leaf_count(DetailError([])) == 0
+    assert _drf._validation_leaf_count(DetailError(None)) == 1
+    assert _drf._validation_leaf_count(RuntimeError("no detail")) == 0
+
+    deeply_nested: Any = "leaf"
+    for _ in range(256):
+        deeply_nested = {"value": deeply_nested}
+    assert _drf._validation_leaf_count(DetailError(deeply_nested)) == 1
+
+
 def test_plain_django_startup_without_optional_imports() -> None:
     result = _run_python(
         textwrap.dedent(
@@ -171,6 +320,8 @@ def test_plain_django_startup_without_optional_imports() -> None:
                     blocked = (
                         fullname == "ninja"
                         or fullname.startswith("ninja.")
+                        or fullname == "rest_framework"
+                        or fullname.startswith("rest_framework.")
                         or fullname == "opentelemetry.sdk"
                         or fullname.startswith("opentelemetry.sdk.")
                         or fullname == "opentelemetry.exporter"
@@ -219,6 +370,7 @@ def test_plain_django_startup_without_optional_imports() -> None:
 
             forbidden = (
                 "ninja",
+                "rest_framework",
                 "opentelemetry.sdk",
                 "opentelemetry.exporter",
             )

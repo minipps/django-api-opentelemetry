@@ -100,9 +100,9 @@ jobs:
           chmod 0777 test-results
           docker run --rm \
             --volume "$PWD/test-results:/workspace/test-results" \
-            --env COMPAT_EXTRAS=ninja,otlp \
+            --env COMPAT_EXTRAS=ninja,drf,otlp \
             "django-ninja-otel-ci:py${{ matrix.python-version }}" \
-            bash -c 'set -euo pipefail; scripts/compat.sh "Django~=${{ matrix.django }}.0" "django-ninja==1.7.1"; /tmp/compat-venv/bin/python -m pytest --junitxml=/workspace/test-results/pytest.xml'
+            bash -c 'set -euo pipefail; scripts/compat.sh "Django~=${{ matrix.django }}.0" "django-ninja==1.7.1" "djangorestframework==3.18.3"; /tmp/compat-venv/bin/python -m pytest --junitxml=/workspace/test-results/pytest.xml'
 
       - name: Upload pytest report
         if: always()
@@ -124,18 +124,30 @@ jobs:
             python-version: "3.12"
             extras: ninja,otlp
             requirements: "Django~=5.2.0 django-ninja==1.7.0"
-          - name: plain Django without Ninja
+          - name: DRF 3.16.1 baseline
+            python-version: "3.12"
+            extras: ninja,drf,otlp
+            requirements: "Django~=5.2.0 django-ninja==1.7.1 djangorestframework==3.16.1"
+          - name: DRF 3.17.2 baseline
+            python-version: "3.12"
+            extras: ninja,drf,otlp
+            requirements: "Django~=5.2.0 django-ninja==1.7.1 djangorestframework==3.17.2"
+          - name: plain Django without Ninja or DRF
             python-version: "3.12"
             extras: otlp
             requirements: "Django~=5.2.0"
           - name: API-only without SDK/exporters
             python-version: "3.12"
-            extras: ninja
-            requirements: "Django~=5.2.0"
+            extras: ninja,drf
+            requirements: "Django~=5.2.0 django-ninja==1.7.1 djangorestframework==3.18.3"
+          - name: DRF without Ninja
+            python-version: "3.12"
+            extras: drf,otlp
+            requirements: "Django~=5.2.0 djangorestframework==3.18.3"
           - name: OpenTelemetry 1.44 baseline
             python-version: "3.12"
-            extras: ninja,otlp
-            requirements: "Django~=5.2.0 opentelemetry-api==1.44.0 opentelemetry-sdk==1.44.0 opentelemetry-exporter-otlp-proto-http==1.44.0"
+            extras: ninja,drf,otlp
+            requirements: "Django~=5.2.0 django-ninja==1.7.1 djangorestframework==3.18.3 opentelemetry-api==1.44.0 opentelemetry-sdk==1.44.0 opentelemetry-exporter-otlp-proto-http==1.44.0"
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -15,15 +15,35 @@ from pathlib import Path
 from typing import Any
 
 SCOPE_NAME = "django_api_opentelemetry"
-VALIDATION_EVENT = "django_ninja.validation.failed"
+NINJA_VALIDATION_EVENT = "django_ninja.validation.failed"
+DRF_VALIDATION_EVENT = "django_drf.validation.failed"
 EXCEPTION_EVENT = "http.server.request.exception"
 DURATION_METRIC = "http.server.request.duration"
 ACTIVE_METRIC = "http.server.active_requests"
-VALIDATION_COUNT = "django_ninja.validation.error_count"
+NINJA_VALIDATION_COUNT = "django_ninja.validation.error_count"
+DRF_VALIDATION_COUNT = "django_drf.validation.error_count"
 ROUTE_ATTRIBUTE = "http.route"
 OK_ROUTE, ITEM_ROUTE, ERROR_ROUTE = "/ok", "/items/{item_id}", "/error"
+DRF_OK_ROUTE, DRF_ITEM_ROUTE, DRF_ERROR_ROUTE = (
+    "/drf/ok",
+    "/drf/items",
+    "/drf/error",
+)
 REQUIRED_ROUTES = (OK_ROUTE, ITEM_ROUTE, ERROR_ROUTE)
+DRF_REQUIRED_ROUTES = (DRF_OK_ROUTE, DRF_ITEM_ROUTE, DRF_ERROR_ROUTE)
+ALL_ROUTES = REQUIRED_ROUTES + DRF_REQUIRED_ROUTES
+DRF_DISPATCH_SPAN = "django_drf.dispatch"
+DRF_INITIAL_SPAN = "django_drf.initial"
+DRF_RENDER_SPAN = "django_drf.render"
+DRF_OPERATION_COUNTS = {
+    DRF_DISPATCH_SPAN: 3,
+    DRF_INITIAL_SPAN: 3,
+    # The unexpected view error escapes before DRF finalizes a response, so only
+    # the successful and validation responses are rendered through DRF.
+    DRF_RENDER_SPAN: 2,
+}
 INVALID_INPUT = "smoke-invalid-input"
+DRF_INVALID_FIELD = "item_id"
 TRACES_FILE, METRICS_FILE, LOGS_FILE = "traces.jsonl", "metrics.jsonl", "logs.jsonl"
 SIGNAL_FILES = (TRACES_FILE, METRICS_FILE, LOGS_FILE)
 HOST, PORT = "127.0.0.1", 8000
@@ -106,70 +126,136 @@ def validate_smoke_data(
     metrics: list[dict[str, Any]],
     logs: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    spans = [
-        span
-        for span in _scoped(traces, "resourceSpans", "scopeSpans", "spans")
-        if span.get("kind") == 2
-    ]
+    all_spans = _scoped(traces, "resourceSpans", "scopeSpans", "spans")
+    spans = [span for span in all_spans if span.get("kind") == 2]
     routes: dict[str, list[dict[str, Any]]] = {}
     for span in spans:
         route = _route(_attributes(span.get("attributes", [])).get(ROUTE_ATTRIBUTE))
         if route:
             routes.setdefault(route, []).append(span)
-    for route in REQUIRED_ROUTES:
+    for route in ALL_ROUTES:
         _require(
             len(routes.get(route, [])) == 1, f"expected one SERVER span at {route}"
         )
-    _require(len(spans) == 3, f"expected three SERVER spans, got {len(spans)}")
+    _require(len(spans) == 6, f"expected six SERVER spans, got {len(spans)}")
+
+    operation_counts: dict[str, int] = {}
+    for span in all_spans:
+        name = span.get("name")
+        if isinstance(name, str) and name in DRF_OPERATION_COUNTS:
+            operation_counts[name] = operation_counts.get(name, 0) + 1
+    for name, expected in DRF_OPERATION_COUNTS.items():
+        _require(
+            operation_counts.get(name, 0) == expected,
+            f"expected {expected} {name} spans, got {operation_counts.get(name, 0)}",
+        )
 
     logs = _scoped(logs, "resourceLogs", "scopeLogs", "logRecords")
-    validation = [log for log in logs if log.get("eventName") == VALIDATION_EVENT]
-    _require(len(validation) == 1, "expected exactly one validation log")
-    validation = validation[0]
-    _require(validation.get("severityText") == "WARN", "validation log is not WARN")
-    attributes = _attributes(validation.get("attributes", []))
-    _require(str(attributes.get(VALIDATION_COUNT)) == "1", "wrong validation count")
-    _require(_route(attributes.get(ROUTE_ATTRIBUTE)) == ITEM_ROUTE, "wrong route")
-    _require(INVALID_INPUT not in json.dumps(validation), "validation log leaks input")
+    validation_logs = [
+        log
+        for log in logs
+        if log.get("eventName") in {NINJA_VALIDATION_EVENT, DRF_VALIDATION_EVENT}
+    ]
+    _require(
+        len(validation_logs) == 2,
+        "expected exactly one Ninja and one DRF validation log",
+    )
+    validations: dict[Any, list[dict[str, Any]]] = {}
+    for log in validation_logs:
+        validations.setdefault(log.get("eventName"), []).append(log)
+    for event_name, count_attribute, route, extra_privacy in (
+        (NINJA_VALIDATION_EVENT, NINJA_VALIDATION_COUNT, ITEM_ROUTE, ()),
+        (
+            DRF_VALIDATION_EVENT,
+            DRF_VALIDATION_COUNT,
+            DRF_ITEM_ROUTE,
+            (DRF_INVALID_FIELD,),
+        ),
+    ):
+        matching = validations.get(event_name, [])
+        _require(
+            len(matching) == 1, f"expected exactly one validation log: {event_name}"
+        )
+        validation = matching[0]
+        _require(validation.get("severityText") == "WARN", "validation log is not WARN")
+        attributes = _attributes(validation.get("attributes", []))
+        _require(
+            str(attributes.get(count_attribute)) == "1",
+            f"wrong validation count for {event_name}",
+        )
+        _require(
+            _route(attributes.get(ROUTE_ATTRIBUTE)) == route,
+            f"wrong route for {event_name}",
+        )
+        encoded = json.dumps(validation)
+        _require(INVALID_INPUT not in encoded, f"{event_name} leaks input")
+        for value in extra_privacy:
+            _require(value not in encoded, f"{event_name} leaks validation details")
 
     exceptions = [log for log in logs if log.get("eventName") == EXCEPTION_EVENT]
-    _require(len(exceptions) == 1, "expected exactly one exception log")
-    exception = exceptions[0]
-    _require(exception.get("severityText") == "ERROR", "exception is not ERROR")
-    exception_type = _attributes(exception.get("attributes", [])).get("exception.type")
-    _require(
-        isinstance(exception_type, str) and exception_type.endswith("RuntimeError"),
-        "wrong exception.type",
-    )
-    trace_id, span_id = exception.get("traceId"), exception.get("spanId")
-    _require(bool(trace_id and span_id), "exception has no trace/span IDs")
-    correlated = next(
-        (
-            span
-            for span in spans
-            if span.get("traceId") == trace_id and span.get("spanId") == span_id
-        ),
-        None,
-    )
-    if correlated is None:
-        raise SmokeError("exception correlation is missing")
-    _require(
-        _route(_attributes(correlated.get("attributes", [])).get(ROUTE_ATTRIBUTE))
-        == ERROR_ROUTE,
-        "exception does not correlate with the /error span",
-    )
+    _require(len(exceptions) == 2, "expected exactly two exception logs")
+    exceptions_by_route: dict[str, dict[str, Any]] = {}
+    for exception in exceptions:
+        _require(exception.get("severityText") == "ERROR", "exception is not ERROR")
+        attributes = _attributes(exception.get("attributes", []))
+        exception_type = attributes.get("exception.type")
+        _require(
+            isinstance(exception_type, str) and exception_type.endswith("RuntimeError"),
+            "wrong exception.type",
+        )
+        route = _route(attributes.get(ROUTE_ATTRIBUTE))
+        if route not in (ERROR_ROUTE, DRF_ERROR_ROUTE):
+            raise SmokeError(f"exception has unexpected route: {route}")
+        _require(route not in exceptions_by_route, f"duplicate exception at {route}")
+        exceptions_by_route[route] = exception
 
-    metric_names = {
-        metric.get("name")
-        for metric in _scoped(metrics, "resourceMetrics", "scopeMetrics", "metrics")
-    }
+    for route in (ERROR_ROUTE, DRF_ERROR_ROUTE):
+        exception = exceptions_by_route.get(route)
+        if exception is None:
+            raise SmokeError(f"missing exception log at {route}")
+        trace_id, span_id = exception.get("traceId"), exception.get("spanId")
+        _require(bool(trace_id and span_id), "exception has no trace/span IDs")
+        correlated = next(
+            (span for span in routes[route] if span.get("spanId") == span_id),
+            None,
+        )
+        if correlated is None or correlated.get("traceId") != trace_id:
+            raise SmokeError(f"exception correlation is missing at {route}")
+
+    metric_items = _scoped(metrics, "resourceMetrics", "scopeMetrics", "metrics")
+    metric_names = {metric.get("name") for metric in metric_items}
     for required in (DURATION_METRIC, ACTIVE_METRIC):
         _require(required in metric_names, f"missing required metric: {required}")
 
+    duration_counts: dict[str, int] = {}
+    for metric in metric_items:
+        if metric.get("name") != DURATION_METRIC:
+            continue
+        histogram = metric.get("histogram") or metric.get("exponentialHistogram") or {}
+        for point in histogram.get("dataPoints", []):
+            route = _route(
+                _attributes(point.get("attributes", [])).get(ROUTE_ATTRIBUTE)
+            )
+            if route is None:
+                continue
+            try:
+                count = int(point.get("count", "0"))
+            except (TypeError, ValueError) as exc:
+                raise SmokeError("duration metric count is malformed") from exc
+            duration_counts[route] = max(duration_counts.get(route, 0), count)
+    for route in ALL_ROUTES:
+        _require(
+            duration_counts.get(route) == 1,
+            f"expected one duration measurement at {route}",
+        )
+
     return {
         "server_spans": len(spans),
-        "validation_logs": 1,
-        "exception_logs": 1,
+        "validation_logs": len(validations),
+        "exception_logs": len(exceptions),
+        "drf_dispatch_spans": operation_counts.get(DRF_DISPATCH_SPAN, 0),
+        "drf_initial_spans": operation_counts.get(DRF_INITIAL_SPAN, 0),
+        "drf_render_spans": operation_counts.get(DRF_RENDER_SPAN, 0),
         "metric_names": tuple(sorted(name for name in metric_names if name)),
     }
 
@@ -230,14 +316,30 @@ def run_smoke(
                 time.sleep(0.1)
         else:
             raise SmokeError("uvicorn did not listen within 20s")
-        for path, expected, label in (
-            (OK_ROUTE, 200, "success"),
-            (f"/items/{INVALID_INPUT}", 422, "validation"),
-            (ERROR_ROUTE, 500, "error"),
-        ):
+        drf_validation_body = json.dumps({"item_id": INVALID_INPUT}).encode()
+        smoke_requests = (
+            (OK_ROUTE, "GET", None, 200, "success"),
+            (f"/items/{INVALID_INPUT}", "GET", None, 422, "validation"),
+            (ERROR_ROUTE, "GET", None, 500, "error"),
+            (DRF_OK_ROUTE, "GET", None, 200, "DRF success"),
+            (
+                DRF_ITEM_ROUTE,
+                "POST",
+                drf_validation_body,
+                400,
+                "DRF validation",
+            ),
+            (DRF_ERROR_ROUTE, "GET", None, 500, "DRF error"),
+        )
+        for path, method, data, expected, label in smoke_requests:
+            headers = {"Accept": "application/json"}
+            if data is not None:
+                headers["Content-Type"] = "application/json"
             request = urllib.request.Request(
-                f"http://127.0.0.1:8000/{path.lstrip('/')}",
-                headers={"Accept": "application/json"},
+                f"http://{HOST}:{PORT}{path}",
+                data=data,
+                headers=headers,
+                method=method,
             )
             try:
                 with urllib.request.urlopen(request, timeout=5) as response:

@@ -3,7 +3,8 @@
 This document describes the Docker, compatibility and release tooling that is
 implemented in this checkout. The files are the source of truth: `Dockerfile`,
 `compose.yaml`, `scripts/`, `ops/otel-collector.yaml` and `.github/workflows/`.
-The [implementation plan](implementation-plan.md) records the design, and
+The [implementation plan](implementation-plan.md) records the design, the
+[DRF support plan](drf-support.md) records the frozen framework contract, and
 [task status](tasks.md) records what has actually been verified.
 
 ## Development environment
@@ -17,8 +18,9 @@ images are pinned by digest for 3.12, 3.13 and 3.14; `PYTHON_VERSION` defaults t
 committed `uv.lock` is installed with `uv sync --locked`. Runtime dependencies
 and development tools live under `/opt/venv`, so mounting the checkout at
 `/workspace` does not hide the environment. The development image installs the
-`ninja` and `otlp` extras plus the `dev` dependency group and installs the
-project editable from `/workspace`.
+`ninja`, `drf` and `otlp` extras plus the `dev` dependency group and installs the
+project editable from `/workspace`. The lockfile resolves the optional DRF range
+to 3.18.3 for this default environment.
 
 | Target | Purpose |
 | --- | --- |
@@ -77,8 +79,8 @@ relevant container commands are:
 
 ```bash
 # During the image build (project installed editable from /workspace):
-uv sync --locked --no-install-project --extra ninja --extra otlp --group dev
-uv sync --locked --extra ninja --extra otlp --group dev
+uv sync --locked --no-install-project --extra ninja --extra drf --extra otlp --group dev
+uv sync --locked --extra ninja --extra drf --extra otlp --group dev
 
 # Distribution target:
 uv build --no-build-isolation --out-dir /dist
@@ -90,17 +92,19 @@ compatibility helper rather than changing `/opt/venv`:
 
 ```bash
 docker compose run --rm dev bash -c '
-  COMPAT_EXTRAS=ninja,otlp \
-  scripts/compat.sh "Django~=5.2.0" "django-ninja==1.7.1" &&
+  COMPAT_EXTRAS=ninja,drf,otlp \
+  scripts/compat.sh "Django~=5.2.0" "django-ninja==1.7.1" \
+    "djangorestframework==3.18.3" &&
   /tmp/compat-venv/bin/python -m pytest
 '
 ```
 
 `scripts/compat.sh` exports the locked dev requirements, removes the locked
-Django/Ninja/OpenTelemetry entries, installs the requested constraints into a
-fresh `/tmp/compat-venv`, and verifies that the package imports from the
-installed distribution rather than `/workspace/src`. It does not modify
-`uv.lock`. The `COMPAT_EXTRAS` value controls which optional extras are installed.
+Django/Ninja/DRF/OpenTelemetry entries, installs the requested constraints into a
+fresh `/tmp/compat-venv`, and verifies that the package imports from the installed
+distribution rather than `/workspace/src`. It does not modify `uv.lock`. The
+`COMPAT_EXTRAS` value controls which optional extras are installed; omitting
+`drf` or `ninja` keeps those absence conditions real.
 
 ## Distribution checks
 
@@ -149,14 +153,19 @@ The `telemetry` Compose profile provides:
 
 The smoke service installs the wheel from `./dist` into a fresh temporary venv,
 along with the locked runtime requirements and the same Uvicorn version as the
-development image. It starts the smoke ASGI application, requests a success
-route, a Ninja validation failure and an uncaught error, then checks all three
-signals. Assertions cover one SERVER span per route, one validation warning, one
-correlated exception error, validation-input omission and both HTTP metrics.
+development image. It starts the smoke ASGI application and issues three
+baseline Django/Ninja requests (a plain Django success, a Ninja validation
+failure and a plain Django uncaught error) plus three DRF requests (success,
+validation failure, uncaught error), then checks all three signals.
+Assertions cover exactly six SERVER spans, one Ninja and one DRF validation
+warning, two correlated exception errors, the expected DRF operation spans,
+validation-input and field-name omission, and exactly one HTTP duration
+measurement per route.
 
-The final built-wheel live-collector run passed with three SERVER spans, one WARN
-validation event, one ERROR exception event and both `http.server.request.duration`
-and `http.server.active_requests` metrics present.
+The `v0.1.0` built-wheel live-collector run (before DRF support) passed with
+three SERVER spans, one WARN validation event, one ERROR exception event and
+both `http.server.request.duration` and `http.server.active_requests` metrics
+present. DRF smoke evidence is recorded separately in [task status](tasks.md).
 
 Run it with a fresh collector volume:
 
@@ -199,10 +208,12 @@ The jobs are:
    `ci` image, run the `check-dist.py` and `check-release.py` self-tests, then run
    `scripts/check.sh all` against the committed locked environment.
 2. **Python/Django matrix** — nine jobs for Python 3.12/3.13/3.14 and Django
-   5.2/6.0/6.1, using `Django~=X.0` and Ninja 1.7.1 through `scripts/compat.sh`.
-3. **Compatibility jobs** — four additional environments: Ninja 1.7.0, plain
-   Django without Ninja, API-only without the SDK/exporters, and the minimum
-   OpenTelemetry 1.44 dependency set. These use Python 3.12 and Django 5.2.
+   5.2/6.0/6.1, using `Django~=X.0`, Ninja 1.7.1, DRF 3.18.3 and the
+   `ninja,drf,otlp` extras through `scripts/compat.sh`.
+3. **Compatibility jobs** — seven additional environments: Ninja 1.7.0, DRF
+   3.16.1, DRF 3.17.2, plain Django without Ninja or DRF, API-only without the
+   SDK/exporters, DRF without Ninja, and the minimum OpenTelemetry 1.44
+   dependency set. These use Python 3.12 and Django 5.2.
 4. **Artifacts** — build wheel/sdist from the `dist` target, verify both wheel
    origins with `scripts/check-dist.py` outside the source tree, record SHA-256
    hashes and upload the checked distributions.
@@ -214,7 +225,7 @@ Compatibility jobs install into `/tmp/compat-venv` and invoke that interpreter
 directly. This avoids an implicit resync to the default dependency set and keeps
 the committed lockfile unchanged. JUnit reports are uploaded when present.
 
-Local verification completed on 2026-10-22:
+Historical `v0.1.0` verification completed on 2026-10-22:
 
 - `scripts/check.sh all` passed Ruff lint, Ruff format, ty and 227 tests in the
   default locked environment. That suite includes the real OpenTelemetry Django
@@ -231,6 +242,39 @@ distribution/release self-checks pass. The corrected `v0.1.0` run on commit
 `80d30d1` passed the release gate, all CI jobs and PyPI publishing. An initial
 attempt failed because the package metadata used the old distribution name;
 the corrected distributions are now published as `django-api-opentelemetry`.
+
+Current DRF delivery verification in this checkout (unreleased feature branch,
+not part of published `v0.1.0`):
+
+- The updated dev image installs the locked `ninja`, `drf` and `otlp` extras and
+  resolves DRF 3.18.3.
+- `docker compose run --rm dev bash scripts/check.sh all` passed Ruff lint, Ruff
+  format, ty on `src` and 288 tests in the default locked environment. The DRF
+  conformance module contributes 43 of those tests.
+- The Docker `dist` target built the wheel and sdist, and
+  `scripts/check-dist.py` verified the original wheel and the wheel rebuilt from
+  the sdist through clean installs and plain-Django requests outside the source
+  tree.
+- The isolated built-wheel collector smoke passed with six SERVER spans, two WARN
+  validation events, two ERROR exception events, three `django_drf.dispatch`
+  spans, three `django_drf.initial` spans, two `django_drf.render` spans and both
+  HTTP metrics.
+- All nine Python/Django matrix jobs (Python 3.12/3.13/3.14 × Django
+  5.2/6.0/6.1) passed with 286 tests and 2 expected contrib-coexistence skips
+  each.
+- All seven compatibility jobs passed. DRF 3.16.1, DRF 3.17.2 and the
+  OpenTelemetry 1.44 baseline each passed 286 with 2 skips; Ninja 1.7.0 without
+  DRF passed 243 with 45 skips; plain Django without Ninja or DRF passed 203
+  with 85 skips; API-only without the SDK/exporters passed 106 with 182 skips;
+  DRF without Ninja passed 246 with 42 skips.
+- Local isolated runs on Python 3.14 and Django 5.2.18 reproduced the DRF
+  3.16.1, DRF 3.17.2, DRF-without-Ninja and plain-Django results with the
+  project installed outside `/workspace`.
+
+These are local Docker results from the feature branch. A branch push does not
+trigger this workflow, which runs on pull requests and pushes to `main`, and a
+temporary DNS error delayed the feature-branch pushes, so no remote CI run or
+release is claimed.
 
 ## Continuous delivery
 

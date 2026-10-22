@@ -82,6 +82,50 @@ Committed checkpoints are `528ea2d` (documentation specification), `b8b0d85`
 `9aaca7e` (optional-dependency test coverage) and `f07ea9b` (CI, distribution
 and release workflows).
 
+## DRF support (feature branch)
+
+DRF support is an unreleased feature-branch change; it does not alter the
+published `v0.1.0` version or distributions. The frozen contract, supported
+versions and privacy limits are in the [DRF support plan](drf-support.md).
+
+| Task | Status | Evidence and remaining work |
+| --- | --- | --- |
+| D0 — Plan and checkpoints | Complete | Commit `7581c9e` recorded the frozen plan before delegated coding. |
+| D1 — Shared contracts and hooks | Complete | Commit `6c5b833`; `_drf.py` plus guarded app activation and shared-helper regressions. Focused suite passed 60 tests; lint/format/type checks clean. |
+| D2 — DRF conformance tests | Complete | Commit `1811017`; `tests/test_drf.py` and the DRF URLconf. Forty-three DRF conformance tests pass against the real middleware and in-memory providers. |
+| D3 — Dependencies and delivery | Complete | Commit `4f38d00`; optional `drf>=3.16,<3.19` extra, lock resolves 3.18.3, dev image installs `ninja,drf,otlp`, CI matrix and compatibility jobs, compat/smoke scripts and docs updated. |
+| D4 — Review and verification | Complete | Default checks pass 288 tests; all nine Python/Django matrix jobs and all seven compatibility jobs pass; distribution verification and the isolated built-wheel collector smoke pass. |
+
+Current D3/D4 evidence actually observed in this checkout:
+
+- `docker compose run --rm dev bash scripts/check.sh all`: Ruff lint, Ruff
+  format, ty on `src` and 288 tests passed in the default locked environment.
+- The default environment resolves Django REST framework 3.18.3 from the
+  optional extra; the development image installs the same locked version.
+- Docker `dist` build and `scripts/check-dist.py`: original wheel and the wheel
+  rebuilt from the sdist installed outside the source tree, passed
+  `twine check --strict`, and served a plain-Django request with HTTP 200.
+- Isolated live-collector smoke against the built wheel: six SERVER spans, two
+  WARN validation events (one Ninja, one DRF), two ERROR exception events, three
+  `django_drf.dispatch`, three `django_drf.initial`, two `django_drf.render`
+  spans and both HTTP metrics.
+- All nine Python/Django matrix jobs (Python 3.12/3.13/3.14 × Django
+  5.2/6.0/6.1) passed with 286 tests and 2 expected contrib-coexistence skips
+  each.
+- All seven compatibility jobs passed: DRF 3.16.1, DRF 3.17.2 and the
+  OpenTelemetry 1.44 baseline each passed 286 with 2 skips; Ninja 1.7.0 without
+  DRF passed 243 with 45 skips; plain Django without Ninja or DRF passed 203
+  with 85 skips; API-only without the SDK/exporters passed 106 with 182 skips;
+  DRF without Ninja passed 246 with 42 skips.
+- Isolated local compatibility runs on Python 3.14 and Django 5.2.18 reproduced
+  the DRF 3.16.1, DRF 3.17.2, DRF-without-Ninja and plain-Django results with
+  the project installed outside `/workspace`.
+- Actionlint passed for the updated workflows. No remote CI run or release is
+  claimed: branch pushes do not trigger this workflow, which runs on pull
+  requests and pushes to `main`, and a temporary DNS error delayed pushing the
+  feature-branch commits. The final matrix and compatibility results above are
+  from the coordinator's local Docker runs.
+
 ## T0 — Package and Docker skeleton
 
 - **Owner:** Coordinator. **Dependencies:** None.
