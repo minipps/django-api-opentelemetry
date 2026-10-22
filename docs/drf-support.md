@@ -73,7 +73,35 @@ extensions, background tasks, Channels, new settings aliases or release work.
 
 ## Execution evidence
 
-- D0: Plan recorded before delegation; implementation and verification pending.
+- D0: Plan committed and pushed as `7581c9e` before coding delegation.
+- D1: Implemented by the DeepSeek core agent and committed as `6c5b833`.
+  Shared-helper/startup checks passed 60 tests, lint, formatting and type checks.
+- D2: Implemented by the DeepSeek conformance agent and committed as `1811017`.
+  All 43 DRF conformance tests pass through the real middleware.
+- D3: Implemented by the DeepSeek delivery agent. Optional dependency and Docker
+  setup are in `ea89ad3`; CI, compatibility and collector smoke are in `4f38d00`.
+  Documentation records the integration as unreleased; no version was changed.
+- D4: Coordinator reviewed the diffs and ran the default container checks:
+  Ruff lint/format, ty on `src`, and all 288 tests passed. Compose configuration,
+  shell syntax and Actionlint checks passed.
+- All nine combinations of Python 3.12/3.13/3.14 and Django 5.2/6.0/6.1 passed
+  with DRF 3.18.3: 286 passed, two contrib-integration skips in each environment.
+- DRF 3.16.1, DRF 3.17.2 and OpenTelemetry 1.44 compatibility environments each
+  passed 286 tests with the same two skips. Ninja 1.7.0 without DRF passed
+  243 tests (45 skips); plain Django without either framework passed 203
+  (85 skips); API-only without SDK/exporters passed 106 (182 skips); DRF without
+  Ninja passed 246 (42 skips). Missing-extra skips are expected. The locked
+  default environment includes and tests the real contrib integration.
+- Docker built a wheel and sdist in `/tmp/drf-support-dist`. Distribution checks
+  passed for the original wheel and a wheel rebuilt from the sdist, including
+  clean imports and a plain-Django HTTP 200 outside the checkout.
+- The isolated `drf-support-verification` collector smoke passed against that
+  wheel: six SERVER spans, two WARN validation events, two correlated ERROR
+  events, three dispatch spans, three initial spans, two render spans and both
+  HTTP metrics. The temporary collector, network and volume were removed.
+- Commits are pushed to `feature/drf-support`. Two checkpoint pushes initially
+  hit temporary DNS failures; the successful retry pushed both commits. No
+  remote CI run or release publication is claimed.
 
 [releases]: https://www.django-rest-framework.org/community/release-notes/
 [view]: https://github.com/encode/django-rest-framework/blob/3.18.3/rest_framework/views.py

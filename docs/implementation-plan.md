@@ -5,30 +5,34 @@
 Build `django-api-opentelemetry`, imported as
 `django_api_opentelemetry`, as a reusable installed Django app. One
 `INSTALLED_APPS` entry enables Django-wide HTTP traces, metrics and exception
-logs, with deeper instrumentation for ordinary Django Ninja APIs. Endpoint
-decorators and a replacement `NinjaAPI` class are not required.
+logs, with deeper instrumentation for ordinary Django Ninja and Django REST
+framework APIs. Endpoint decorators, a replacement `NinjaAPI` class and DRF base
+classes are not required.
 
-The initial release targets Python 3.12–3.14, Django 5.2/6.0/6.1, Ninja
-1.7.0–1.7.1, and OpenTelemetry API/SDK 1.44+. Constrain the optional Ninja
-dependency to `>=1.7,<1.8` until the next minor version is verified. Use a
-`src/` package layout. Ninja and SDK/exporter dependencies are optional extras,
-so the base package also works in plain Django projects.
+The release targets Python 3.12–3.14, Django 5.2/6.0/6.1, Ninja 1.7.0–1.7.1,
+Django REST framework 3.16–3.18, and OpenTelemetry API/SDK 1.44+. Constrain the
+optional Ninja dependency to `>=1.7,<1.8` and the optional DRF dependency to
+`>=3.16,<3.19` until the next minor versions are verified. Use a `src/` package
+layout. Ninja, DRF and SDK/exporter dependencies are optional extras, so the base
+package also works in plain Django projects.
 
 Development, tests, compatibility checks and distribution builds run in Docker.
 The [Docker workflow](development-and-ci.md) and [task breakdown](tasks.md) are
-part of this specification.
+part of this specification. The frozen DRF contract and task ownership are in
+the [DRF support plan](drf-support.md); this document records how that integration
+fits the existing design.
 
-DRF is a future integration. Keep Ninja imports out of the shared request and
-telemetry code; do not implement DRF hooks or a generic adapter registry now.
+Keep framework imports out of the shared request and telemetry code. Ninja and
+DRF install separate guarded hooks; do not add a generic adapter registry.
 
 ## Implementation status
 
 The plan below has been implemented in this checkout as the modules
 `_config.py`, `_runtime.py`, `_telemetry.py`, `middleware.py`, `_ninja.py`,
-`apps.py` and `_asgi.py`. One installed-app entry remains the normal setup; the
-public lifecycle helpers are an optional addition described below. The
-[task status](tasks.md) table records the final local evidence, external GitHub
-verification and release setup. This is a design record, not a claim that the
+`_drf.py`, `apps.py` and `_asgi.py`. One installed-app entry remains the normal
+setup; the public lifecycle helpers are an optional addition described below.
+The [task status](tasks.md) table records the released `v0.1.0` evidence and the
+separate DRF delivery evidence. This is a design record, not a claim that a new
 release has been published.
 
 ## FastAPI research baseline
@@ -75,7 +79,7 @@ and [router binding](https://github.com/vitalik/django-ninja/blob/v1.7.1/ninja/r
 ## Installation and public configuration
 
 ```bash
-pip install "django-api-opentelemetry[ninja,otlp]"
+pip install "django-api-opentelemetry[ninja,drf,otlp]"
 ```
 
 ```python
@@ -130,7 +134,7 @@ termination path. The lifespan wrapper provides an explicit shutdown signal.
 The package does not intercept signals and does not claim a flush on every
 possible server-termination path; deployments using another worker should call
 `shutdown()` from the worker's documented exit hook. The installed app alone
-still activates HTTP telemetry and Ninja hooks; the wrapper is recommended for
+still activates HTTP telemetry and Ninja/DRF hooks; the wrapper is recommended for
 reliable ASGI shutdown rather than required for recording.
 
 Use one optional Django setting, `DJANGO_NINJA_OTEL`:
@@ -140,7 +144,7 @@ Use one optional Django setting, `DJANGO_NINJA_OTEL`:
 | `tracing` | `True` | Enable package-created spans, including operation spans. |
 | `metrics` | `True` | Enable HTTP measurements. |
 | `logs` | `True` | Emit automatic validation and exception logs. |
-| `operation_spans` | `True` | Add Ninja operation spans when tracing is enabled. |
+| `operation_spans` | `True` | Add Ninja and DRF operation spans when tracing is enabled. |
 | `http_instrumentation` | `True` | Allow package-owned HTTP server spans and metrics; false leaves HTTP ownership to another integration. |
 | `auto_configure` | Environment value, otherwise `False` | Configure OTLP exporters; an explicit setting overrides the environment. |
 | `exclude` | `None` | Callable receiving `HttpRequest`; true suppresses all package telemetry for that request. |
@@ -162,13 +166,15 @@ a default localhost destination.
 
 The installed app inserts its middleware first unless it is explicitly present
 in `MIDDLEWARE` already. Respect an explicit position and handle list or tuple
-settings. Ninja-specific hooks activate only when a supported Ninja version is
-installed. SDK and exporter imports remain optional.
+settings. Ninja and DRF hooks activate independently, only when a supported
+version is installed. SDK and exporter imports remain optional. No setting keys
+are framework-specific; missing frameworks remain silent and unsupported versions
+produce one diagnostic for that framework.
 
 ## Architecture and internal contracts
 
-Use a small, flat package. Configuration, runtime, telemetry, middleware, Ninja
-hooks and app initialization have separate ownership.
+Use a small, flat package. Configuration, runtime, telemetry, middleware,
+Ninja/DRF hooks and app initialization have separate ownership.
 
 | Module | Responsibility |
 | --- | --- |
@@ -177,6 +183,7 @@ hooks and app initialization have separate ownership.
 | `_telemetry.py` | Request state, context activation, instruments, log emission and deduplication. |
 | `middleware.py` | Synchronous/asynchronous Django request and response lifecycle. |
 | `_ninja.py` | Guarded Ninja hooks and operation instrumentation. |
+| `_drf.py` | Guarded DRF 3.16–3.18 hooks, operation spans and validation events. |
 | `apps.py` | Middleware insertion, signal registration and hook activation. |
 | `_asgi.py` | Optional ASGI lifespan wrapper and public shutdown path. |
 
@@ -192,8 +199,11 @@ addition is `instrument_asgi()`/`shutdown()` documented above:
 - `_telemetry.activate(state)` is a context manager that attaches and restores
   request context in the same execution context.
 - `_telemetry.operation(state, name, function=None)` is a context manager for
-  an optional internal span.
-- `_telemetry.record_validation(state, error_count)` emits the validation event.
+  an optional internal span. It accepts both the `django_ninja.` and
+  `django_drf.` namespaces and preserves every existing Ninja call.
+- `_telemetry.record_validation(state, error_count, *, framework="django_ninja")`
+  emits the framework's validation event; the keyword-only parameter defaults to
+  the existing Ninja behavior.
 - `_telemetry.record_exception(state, exc)` records an unexpected exception once.
 - `_telemetry.finish_request(state, status_code, error=None)` completes owned
   measurements and the server span exactly once.
@@ -284,10 +294,50 @@ identity across Ninja, Django signals and streaming observation. A plain 5xx
 response without an exception marks the span as failed but does not invent an
 exception log. Never serialize validation errors into the warning event.
 
+### DRF hooks and automatic events
+
+Keep DRF patches in `_drf.py`, verify the installed 3.16–3.18 family and every
+expected signature, and wrap original implementations rather than copying them.
+Missing DRF is silent. An unsupported version or incompatible hook shape
+produces one diagnostic and leaves all DRF hooks untouched. Installation is
+idempotent and lazy in `TelemetryConfig.ready()`.
+
+Hook the synchronous `APIView.dispatch`, `APIView.initial`,
+`APIView.handle_exception` and DRF `Response.render`; never patch Django's shared
+template-response base class. Preserve native arguments, return values,
+exception handlers, authentication, permissions, throttling, streaming and
+rendering behavior. APIViews, generic views, ViewSets/router actions and
+`@api_view` are covered through their shared lifecycle. Native DRF views remain
+synchronous under WSGI and Django ASGI.
+
+Operation span names are `django_drf.dispatch`, `django_drf.initial` and
+`django_drf.render`. Dispatch includes handler execution and serializer work;
+initial includes content negotiation, authentication, permissions and
+throttling; render times actual response rendering, not serializer `.data`.
+Initial is a child of dispatch. Deferred rendering is a sibling under the HTTP
+span. Already-rendered responses do not create another render span. Streaming
+stays owned by the existing HTTP middleware.
+
+| Situation | Automatic event |
+| --- | --- |
+| `ValidationError` reaching `handle_exception` | One WARN `django_drf.validation.failed`, with `http.route` when known and `django_drf.validation.error_count` (scalar leaves in nested details). |
+| Expected DRF/Django 4xx error | No exception log; operation spans are not marked as errors. |
+| Unexpected exception escaping dispatch | One ERROR `http.server.request.exception`. |
+| Handler failure or `APIException` converted to a 5xx response | One error event for the original exception. |
+| Custom handler converting an unexpected error to a successful/4xx response | No error log. |
+| Non-raising `is_valid()` followed by an application-created 400 | No validation event. |
+
+Never serialize validation details, input, field names or codes into telemetry.
+HTTP spans still reflect all response status codes. Shared helpers import neither
+framework and use explicit request state, including an explicit `None` marker for
+excluded requests; hooks never infer state from ambient spans. The frozen
+contract is in the [DRF support plan](drf-support.md).
+
 ### Provider ownership and coexistence
 
 The base dependencies are Django and `opentelemetry-api`. The `ninja` extra adds
-Ninja; `otlp` adds the SDK and HTTP/protobuf exporters. Docker development tools
+Ninja, `drf` adds Django REST framework, and `otlp` adds the SDK and
+HTTP/protobuf exporters. Docker development tools
 are not runtime dependencies of the published package.
 
 Automatic setup supports standard OTLP signal-specific endpoints, exporter
@@ -306,7 +356,7 @@ call. Do not replace or shut down application-owned providers. A best-effort
 server termination paths such as Uvicorn 0.54's post-drain `SIGTERM` re-raise.
 
 Detect standard OpenTelemetry Django middleware and defer HTTP spans and
-metrics to it while retaining Ninja enrichment. Other wrappers use
+metrics to it while retaining Ninja and DRF enrichment. Other wrappers use
 `http_instrumentation=False`. Keep tracing enabled to add operation spans to
 the existing request context. Do not claim automatic detection of every vendor
 wrapper or duplicate exporter destination.
@@ -316,7 +366,8 @@ wrapper or duplicate exporter destination.
 Release only when all of these hold:
 
 - An ordinary `NinjaAPI()` works with one installed-app entry.
-- Plain Django works without Ninja or SDK/exporter extras installed.
+- An ordinary DRF APIView works with one installed-app entry and the `drf` extra.
+- Plain Django works without Ninja, DRF or SDK/exporter extras installed.
 - Validation yields one warning without invalid input; unexpected errors yield
   one correlated error even with unsampled traces.
 - Expected HTTP failures and custom handlers retain response behavior.
@@ -331,14 +382,18 @@ Release only when all of these hold:
 - The optional ASGI wrapper forwards non-lifespan scopes unchanged, acknowledges
   startup, and flushes owned resources once on lifespan shutdown; a real Uvicorn
   subprocess verifies the shutdown path.
+- DRF success, validation and unexpected-error requests keep native responses,
+  emit exactly one DRF validation warning and one correlated error event, and
+  preserve expected 4xx behavior.
 - Docker-based tests pass across the compatibility matrix, and a local OTLP
-  receiver confirms traces, metrics and logs from the built wheel.
+  receiver confirms Ninja and DRF traces, metrics and logs from the built wheel.
 
 Use actual Django clients and WSGI/ASGI handlers for middleware tests. Ninja's
 standalone test client cannot establish middleware correctness. Isolate global
 provider configuration and process-lifecycle tests in subprocesses.
 
-Defer DRF, Channels/WebSockets, background jobs, automatic application-log
-forwarding, per-chunk spans and observability dashboards. Ninja hooks require
-version maintenance. Exception messages and stack traces can contain sensitive
-data; document processor-level redaction and `logs=False`.
+Defer Channels/WebSockets, background jobs, third-party asynchronous DRF
+extensions, automatic application-log forwarding, per-chunk spans and
+observability dashboards. Ninja and DRF hooks require version maintenance.
+Exception messages and stack traces can contain sensitive data; document
+processor-level redaction and `logs=False`.
