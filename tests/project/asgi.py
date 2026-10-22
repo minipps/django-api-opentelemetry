@@ -13,4 +13,6 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tests.project.settings")
 
 from django.core.asgi import get_asgi_application  # noqa: E402
 
-application = get_asgi_application()
+from django_ninja_opentelemetry import instrument_asgi  # noqa: E402
+
+application = instrument_asgi(get_asgi_application())

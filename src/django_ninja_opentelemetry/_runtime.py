@@ -67,6 +67,7 @@ class _CleanupWorker:
     def _run(self) -> None:
         resources = self._requests.get()
         for resource in resources:
+            _flush_quiet(resource)
             try:
                 resource.shutdown()
             except Exception as exc:  # noqa: BLE001 - continue cleanup
@@ -451,6 +452,16 @@ def _make_provider(signal: _Signal, component: Any) -> Any:
     return Provider(resource=resource, shutdown_on_exit=False)
 
 
+def _flush_quiet(resource: object) -> None:
+    force_flush = getattr(resource, "force_flush", None)
+    if not callable(force_flush):
+        return
+    try:
+        force_flush()
+    except Exception:  # noqa: BLE001 - shutdown still proceeds
+        _logger.debug("OpenTelemetry component flush failed", exc_info=True)
+
+
 def _shutdown_quiet(resource: object) -> None:
     shutdown = getattr(resource, "shutdown", None)
     if not callable(shutdown):
@@ -459,6 +470,17 @@ def _shutdown_quiet(resource: object) -> None:
         shutdown()
     except Exception:  # noqa: BLE001 - best-effort cleanup of our own object
         _logger.debug("OpenTelemetry component cleanup failed", exc_info=True)
+
+
+def shutdown() -> None:
+    """Flush and shut down package-owned telemetry resources once.
+
+    This is safe to call from an ASGI lifespan shutdown hook (including through
+    ``asyncio.to_thread``). The wait is bounded, and application-owned providers
+    are never shut down.
+    """
+
+    _shutdown()
 
 
 def _shutdown() -> None:

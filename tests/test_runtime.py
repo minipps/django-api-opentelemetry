@@ -1297,6 +1297,115 @@ def test_slow_atexit_cleanup_is_bounded() -> None:
     assert "OpenTelemetry shutdown did not finish within" in result.stderr
 
 
+def test_normal_interpreter_exit_flushes_metrics_over_http() -> None:
+    import threading
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    received: list[str] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            length = int(self.headers.get("content-length", 0))
+            self.rfile.read(length)
+            received.append(self.path)
+            self.send_response(200)
+            self.send_header("content-type", "application/x-protobuf")
+            self.end_headers()
+
+        def log_message(self, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = run_script(
+            """
+            from django_ninja_opentelemetry import _runtime
+            from django_ninja_opentelemetry._config import Config
+
+            providers = _runtime.get_providers(
+                Config(auto_configure=True, tracing=False, logs=False)
+            )
+            counter = providers[1].get_meter("exporter-probe").create_counter(
+                "exporter.probe"
+            )
+            counter.add(3)
+            print("done")
+            """,
+            env={
+                "OTEL_EXPORTER_OTLP_ENDPOINT": (
+                    f"http://127.0.0.1:{server.server_address[1]}"
+                ),
+                "OTEL_TRACES_EXPORTER": "none",
+                "OTEL_LOGS_EXPORTER": "none",
+                "OTEL_METRIC_EXPORT_INTERVAL": "60000",
+                "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT": "2",
+            },
+            timeout=30,
+        )
+
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and "/v1/metrics" not in received:
+            time.sleep(0.05)
+        assert result.stdout.strip() == "done"
+        assert "/v1/metrics" in received
+        assert "did not finish within" not in result.stderr
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(5)
+
+
+def test_public_shutdown_flushes_once_before_closing_owned_resources() -> None:
+    result = run_json(
+        """
+        import asyncio
+        import json
+
+        from django_ninja_opentelemetry import shutdown
+        from django_ninja_opentelemetry import _runtime
+        from django_ninja_opentelemetry._config import Config
+
+        EVENTS = []
+
+
+        class Resource:
+            def force_flush(self):
+                EVENTS.append("flush")
+
+            def shutdown(self):
+                EVENTS.append("shutdown")
+
+
+        class Provider:
+            def get_tracer(self, *args, **kwargs):
+                return None
+
+            def add_span_processor(self, component):
+                self.component = component
+
+
+        _runtime._make_component = lambda signal, endpoint: Resource()
+        _runtime.get_providers(
+            Config(
+                auto_configure=True,
+                metrics=False,
+                logs=False,
+                tracer_provider=Provider(),
+            )
+        )
+        asyncio.run(asyncio.to_thread(shutdown))
+        asyncio.run(asyncio.to_thread(shutdown))
+        print(json.dumps(EVENTS))
+        """,
+        env={"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318"},
+    )
+
+    assert result == ["flush", "shutdown"]
+
+
 def test_existing_foreign_globals_are_preserved_across_fork() -> None:
     result = run_script(
         """
