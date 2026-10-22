@@ -1,5 +1,6 @@
 .git
 .gitignore
+.github
 .venv
 venv
 __pycache__
@@ -7,6 +8,8 @@ __pycache__
 *.egg-info
 build
 dist
+*.whl
+*.tar.gz
 .pytest_cache
 .ruff_cache
 .ty_cache
@@ -14,8 +17,20 @@ dist
 .coverage
 .coverage.*
 htmlcov
+test-results
+*.log
 .env
 .env.*
+.netrc
+.pypirc
+.npmrc
+.aws
+**/.aws
+.ssh
+**/.ssh
+.git-credentials
+id_rsa
+id_ed25519
 .idea
 .vscode
 .DS_Store
