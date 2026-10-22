@@ -1,20 +1,84 @@
 name: django-ninja-opentelemetry
 
+x-dev-image: &dev-image
+  build:
+    context: .
+    target: dev
+    args:
+      PYTHON_VERSION: ${PYTHON_VERSION:-3.14}
+      UV_VERSION: ${UV_VERSION:-0.13.5}
+      LOCAL_UID: ${LOCAL_UID:-1000}
+      LOCAL_GID: ${LOCAL_GID:-1000}
+  image: django-ninja-opentelemetry-dev
+
 services:
   dev:
-    build:
-      context: .
-      target: dev
-      args:
-        PYTHON_VERSION: ${PYTHON_VERSION:-3.14}
-        UV_VERSION: ${UV_VERSION:-0.13.5}
-        LOCAL_UID: ${LOCAL_UID:-1000}
-        LOCAL_GID: ${LOCAL_GID:-1000}
-    image: django-ninja-opentelemetry-dev
+    <<: *dev-image
     init: true
     working_dir: /workspace
     environment:
-      UV_PROJECT_ENVIRONMENT: /opt/venv
+      - UV_PROJECT_ENVIRONMENT=/opt/venv
+      - DJANGO_NINJA_OTEL_AUTO_CONFIGURE
+      - OTEL_SDK_DISABLED
+      - OTEL_SERVICE_NAME
+      - OTEL_RESOURCE_ATTRIBUTES
+      - OTEL_EXPORTER_OTLP_ENDPOINT
+      - OTEL_EXPORTER_OTLP_PROTOCOL
+      - OTEL_EXPORTER_OTLP_HEADERS
+      - OTEL_EXPORTER_OTLP_TIMEOUT
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+      - OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
+      - OTEL_TRACES_EXPORTER
+      - OTEL_METRICS_EXPORTER
+      - OTEL_LOGS_EXPORTER
     volumes:
       - .:/workspace
-    command: ["sleep", "infinity"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    command:
+      - /bin/sh
+      - -c
+      - DJANGO_SETTINGS_MODULE=tests.project.demo_settings exec uvicorn tests.project.asgi:application --host 0.0.0.0 --port 8000 --reload
+
+  collector-init:
+    <<: *dev-image
+    profiles: ["telemetry"]
+    user: "0:0"
+    restart: "no"
+    volumes:
+      - telemetry:/telemetry
+    command: ["sh", "-c", "chown 10001:10001 /telemetry && chmod 0755 /telemetry"]
+
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.163.2@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
+    profiles: ["telemetry"]
+    depends_on:
+      collector-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./ops/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - telemetry:/telemetry
+    restart: unless-stopped
+
+  smoke:
+    <<: *dev-image
+    profiles: ["telemetry"]
+    init: true
+    working_dir: /workspace
+    depends_on:
+      collector-init:
+        condition: service_completed_successfully
+      collector:
+        condition: service_started
+    volumes:
+      - ./dist:/artifacts:ro
+      - ./scripts:/smoke:ro
+      - telemetry:/telemetry:ro
+      - ./pyproject.toml:/workspace/pyproject.toml:ro
+      - ./uv.lock:/workspace/uv.lock:ro
+    entrypoint: ["/bin/bash", "/smoke/run-smoke.sh"]
+    restart: "no"
+
+volumes:
+  telemetry:

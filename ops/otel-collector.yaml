@@ -1,0 +1,56 @@
+# Minimal local collector for the built-wheel smoke test.
+#
+# Image pin verified against the official Docker Hub registry manifest list:
+#   otel/opentelemetry-collector-contrib:0.163.2
+#   sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
+#
+# The file exporter defaults to truncating on every batch.  ``append: true`` is
+# required so all batches from one smoke run remain in the three signal files.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 100ms
+    send_batch_size: 1024
+
+exporters:
+  file/traces:
+    path: /telemetry/traces.jsonl
+    format: json
+    append: true
+    flush_interval: 100ms
+    create_directory: true
+  file/metrics:
+    path: /telemetry/metrics.jsonl
+    format: json
+    append: true
+    flush_interval: 100ms
+    create_directory: true
+  file/logs:
+    path: /telemetry/logs.jsonl
+    format: json
+    append: true
+    flush_interval: 100ms
+    create_directory: true
+
+service:
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file/traces]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file/metrics]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file/logs]
