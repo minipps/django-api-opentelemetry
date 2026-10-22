@@ -5,7 +5,7 @@ build-backend = "uv_build"
 [project]
 name = "django-api-opentelemetry"
 version = "0.1.0"
-description = "OpenTelemetry traces, metrics and exception logs for Django and Django Ninja"
+description = "OpenTelemetry traces, metrics and exception logs for Django, Django Ninja and Django REST framework"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -25,6 +25,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+drf = ["djangorestframework>=3.16,<3.19"]
 ninja = ["django-ninja>=1.7,<1.8"]
 otlp = [
     "opentelemetry-exporter-otlp-proto-http>=1.44,<2",
