@@ -3,9 +3,8 @@
 OpenTelemetry traces, metrics and exception logs for Django, with deeper
 instrumentation for Django Ninja APIs.
 
-> **Status:** the implementation and local Docker verification are complete.
-> GitHub Actions has not run because no remote is configured, and the package
-> has not been published to PyPI.
+> Tagged releases are validated in CI, then published to PyPI by the project's
+> GitHub Actions workflow.
 
 ## Features
 
