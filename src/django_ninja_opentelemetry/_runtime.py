@@ -258,7 +258,6 @@ def _setup_signal(
         raise _Skip("another provider was configured concurrently")
 
     _record(state, signal, provider, component, owned=True)
-    state.registrations.add((signal.name, id(provider)))
 
 
 def _prepare_signal(signal: _Signal) -> str | None:
@@ -388,9 +387,10 @@ def _record(
         try:
             state.cleanup = _CleanupWorker()
         except Exception:
-            _shutdown_quiet(component)
             if owned:
                 _shutdown_quiet(provider)
+            else:
+                _shutdown_quiet(component)
             raise
     if owned:
         state.owned_providers.append(provider)
