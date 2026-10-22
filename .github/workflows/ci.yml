@@ -97,6 +97,8 @@ jobs:
           tags: django-ninja-otel-ci:py${{ matrix.python-version }}
           build-args: |
             PYTHON_VERSION=${{ matrix.python-version }}
+          cache-from: type=gha,scope=ci-tests-py${{ matrix.python-version }}
+          cache-to: type=gha,mode=max,scope=ci-tests-py${{ matrix.python-version }}
           provenance: false
 
       - name: Run compatibility test environment
@@ -187,6 +189,8 @@ jobs:
           tags: django-ninja-otel-ci:compat-${{ matrix.python-version }}
           build-args: |
             PYTHON_VERSION=${{ matrix.python-version }}
+          cache-from: type=gha,scope=ci-tests-py${{ matrix.python-version }}
+          cache-to: type=gha,mode=max,scope=ci-tests-py${{ matrix.python-version }}
           provenance: false
 
       - name: Run compatibility test environment

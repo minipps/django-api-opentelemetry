@@ -213,12 +213,19 @@ digest is an explicit manual review rather than a tag-following update. Docker
 documents the [GitHub Actions integration](https://docs.docker.com/build/ci/github-actions/)
 and [multi-stage build targets](https://docs.docker.com/build/building/multi-stage/).
 
-CI deliberately does not use the GitHub Actions cache. Buildx never reads or
-writes `type=gha` cache entries, so a publishing artifact cannot consume mutable
-cache state written by an earlier run. Local Docker/BuildKit layer reuse within a
-single fresh runner and the Dockerfile's uv cache mounts remain; those layers are
-not shared between jobs or workflow runs. The tradeoff is slower cold builds for
-reproducible, isolated release artifacts.
+The Python/Django matrix and compatibility jobs share GitHub Actions Buildx
+caches under `ci-tests-py<version>`, one scope per Python version. Django versions
+and compatibility cases reuse the same base CI image. `mode=max` preserves
+intermediate dependency layers. GitHub's
+[cache access rules](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)
+also scope access by branch, tag or PR merge ref; PR caches cannot overwrite the
+default branch's cache.
+
+Matrix and compatibility jobs use these caches during both ordinary and release
+CI. Lint, release-gate, distribution and collector jobs do not use external
+caches. Release artifacts therefore remain isolated from the shared test
+caches. Local Docker/BuildKit layer reuse within a fresh runner and the
+Dockerfile's uv cache mounts remain.
 
 The jobs are:
 
@@ -313,7 +320,8 @@ Supply-chain hardening verification in this checkout on 2026-10-22:
   `v0.1.0` check returned `version=0.1.0` and `prerelease=false`, while a
   malformed `v0.2` tag was rejected.
 - Both workflow files parse, every `actions/checkout` sets
-  `persist-credentials: false`, and no `type=gha` Buildx cache entries remain.
+  `persist-credentials: false`, and shared Buildx caches are restricted to the
+  matrix and compatibility jobs.
   No remote GitHub Actions run is claimed for this branch.
 
 The latest published Actionlint (v1.7.12) predates GitHub's July 2026 `$/.`
@@ -351,8 +359,9 @@ The wheel and sdist are built once by CI on a fresh runner with no external
 cache. Their SHA-256 hashes are recorded in `SHA256SUMS`, and the `dist` artifact
 is the only handoff. Every later job verifies those exact hashes before use, so
 publishing consumes the same immutable bytes that CI verified rather than a
-rebuild. Pull-request and ordinary CI jobs stay read-only, with no secrets, OIDC
-permission or shared Actions cache.
+rebuild. Pull-request and ordinary CI jobs retain read-only repository tokens,
+with no secrets or OIDC permission. Only matrix and compatibility jobs
+share Actions build caches.
 
 The publishing flow follows PyPI's documented
 [Trusted Publishing setup](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
