@@ -17,6 +17,10 @@ The following settings were applied and read back through the GitHub API on
   `docker/setup-buildx-action`, `docker/build-push-action`, and
   `pypa/gh-action-pypi-publish`. Updating their SHAs remains allowed; introducing
   a different action requires an administrator to extend the allowlist.
+  The PyPA action's transitive `actions/setup-python` dependency is allowed only
+  at `a309ff8b426b58ec0e2a45f0f869d46889d02405`; review this allowlist entry when
+  updating the publishing action. GitHub checks nested actions even when their
+  execution is conditional.
 - The default workflow token is read-only and cannot approve PRs. All external
   contributors need approval before running fork PR workflows.
 - The `pypi` and `testpypi` environments accept only tags matching `v*`, never
@@ -33,8 +37,8 @@ review dependency PRs before merging.
 
 ## Dependabot groups
 
-The [Dependabot configuration](../.github/dependabot.yml) takes effect on the
-default branch after this PR merges. Checks run weekly. Version updates have a
+The [Dependabot configuration](../.github/dependabot.yml) is active on the
+default branch. Checks run weekly. Version updates have a
 seven-day cooldown; security updates are not delayed by that cooldown.
 
 | Manifest | Groups |
