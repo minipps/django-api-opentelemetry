@@ -835,6 +835,7 @@ def _run_script(script: str) -> subprocess.CompletedProcess[str]:
 def test_unsupported_version_warns_once_without_patching(
     installed_version: str,
 ) -> None:
+    pytest.importorskip("ninja")
     result = _run_script(
         f"""
         import logging
@@ -875,6 +876,7 @@ def test_unsupported_version_warns_once_without_patching(
 
 
 def test_bad_hook_signature_warns_once_without_partial_patching() -> None:
+    pytest.importorskip("ninja")
     result = _run_script(
         """
         import logging
@@ -922,6 +924,7 @@ def test_bad_hook_signature_warns_once_without_partial_patching() -> None:
 
 
 def test_missing_hook_warns_once_without_partial_patching() -> None:
+    pytest.importorskip("ninja")
     result = _run_script(
         """
         import logging

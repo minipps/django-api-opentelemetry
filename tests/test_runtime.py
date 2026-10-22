@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -13,6 +14,30 @@ import pytest
 
 from django_ninja_opentelemetry import _runtime
 from django_ninja_opentelemetry._config import Config
+
+
+# These tests exercise real SDK processors and OTLP HTTP exporters in
+# subprocesses. The API-only compatibility job intentionally has neither.
+def _module_available(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except ImportError:
+        return False
+
+
+_SDK_AVAILABLE = all(
+    _module_available(name)
+    for name in (
+        "opentelemetry.sdk",
+        "opentelemetry.exporter.otlp.proto.http.trace_exporter",
+        "opentelemetry.exporter.otlp.proto.http.metric_exporter",
+        "opentelemetry.exporter.otlp.proto.http._log_exporter",
+    )
+)
+pytestmark = pytest.mark.skipif(
+    not _SDK_AVAILABLE,
+    reason="OpenTelemetry SDK and OTLP HTTP exporters are not installed",
+)
 
 _FAKE_EXPORTERS = textwrap.indent(
     """

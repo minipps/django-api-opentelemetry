@@ -6,7 +6,7 @@ import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from django.conf import settings
@@ -15,19 +15,6 @@ from django.test import RequestFactory
 from opentelemetry import trace
 from opentelemetry._logs import SeverityNumber
 from opentelemetry.propagate import inject
-from opentelemetry.sdk._logs import LoggerProvider
-from opentelemetry.sdk._logs.export import (
-    InMemoryLogRecordExporter,
-    SimpleLogRecordProcessor,
-)
-from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import InMemoryMetricReader
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
-    InMemorySpanExporter,
-)
-from opentelemetry.sdk.trace.sampling import ALWAYS_OFF, ALWAYS_ON, ParentBased
 from opentelemetry.trace import NonRecordingSpan, SpanContext, SpanKind, TraceFlags
 
 from django_ninja_opentelemetry import _telemetry
@@ -41,6 +28,16 @@ from django_ninja_opentelemetry._telemetry import (
     record_exception,
     record_validation,
 )
+
+if TYPE_CHECKING:
+    from opentelemetry.sdk._logs import LoggerProvider
+    from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
 
 if not settings.configured:
     settings.configure()
@@ -75,6 +72,25 @@ def resolve_config_providers(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def providers_factory() -> Iterator[Callable[..., Providers]]:
+    pytest.importorskip(
+        "opentelemetry.sdk",
+        reason="the OpenTelemetry SDK is required for telemetry recording tests",
+    )
+
+    from opentelemetry.sdk._logs import LoggerProvider
+    from opentelemetry.sdk._logs.export import (
+        InMemoryLogRecordExporter,
+        SimpleLogRecordProcessor,
+    )
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+    from opentelemetry.sdk.trace.sampling import ALWAYS_ON, ParentBased
+
     created: list[Providers] = []
 
     def make(sampler: Any = None) -> Providers:
@@ -361,6 +377,8 @@ def test_exception_log_correlates_with_sampled_request_context(
 def test_exception_log_works_with_unsampled_context(
     providers_factory: Callable[..., Providers],
 ) -> None:
+    from opentelemetry.sdk.trace.sampling import ALWAYS_OFF, ParentBased
+
     providers = providers_factory(ParentBased(ALWAYS_OFF))
     state = begin_request(make_request(), make_config(providers))
     assert state is not None
