@@ -47,6 +47,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.project.settings"
 minversion = "8.0"
 testpaths = ["tests"]
 addopts = "-ra"
