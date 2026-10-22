@@ -419,6 +419,29 @@ def test_validation_warning_contains_only_count_and_route(
     }
 
 
+def test_drf_validation_warning_uses_drf_namespace(
+    providers: Providers,
+) -> None:
+    state = begin_request(make_request(), make_config(providers))
+    assert state is not None
+    state.route = "/api/items/<int:pk>"
+
+    record_validation(state, 2, framework="django_drf")
+    finish_request(state, 400)
+
+    record = log_records(providers)[0]
+    assert record.event_name == "django_drf.validation.failed"
+    assert record.severity_number is SeverityNumber.WARN
+    assert record.severity_text == "WARN"
+    assert record.body == "Request validation failed"
+    assert record.exception is None
+    assert record.attributes == {
+        "django_drf.validation.error_count": 2,
+        "http.route": "/api/items/<int:pk>",
+    }
+    assert "django_ninja.validation.error_count" not in record.attributes
+
+
 def test_logging_disabled_skips_validation_and_exception_logs(
     providers: Providers,
 ) -> None:
@@ -617,6 +640,50 @@ def test_nested_operations_preserve_current_request_trace_context(
     inner_span = spans["django_ninja.endpoint"]
     assert inner_span.parent is not None
     assert inner_span.parent.span_id == outer_span.context.span_id
+
+
+def test_operation_accepts_drf_namespace_and_nesting(
+    providers: Providers,
+) -> None:
+    state = begin_request(make_request(), make_config(providers))
+    assert state is not None
+
+    with activate(state):
+        with operation(state, "django_drf.dispatch") as dispatch_span:
+            with operation(state, "django_drf.initial") as initial_span:
+                assert dispatch_span is not None and initial_span is not None
+        with operation(state, "django_drf.render") as render_span:
+            assert render_span is not None
+
+    finish_request(state, 200)
+
+    spans = {
+        span.name: span
+        for span in providers.spans.get_finished_spans()
+        if span.name.startswith("django_drf.")
+    }
+    assert set(spans) == {
+        "django_drf.dispatch",
+        "django_drf.initial",
+        "django_drf.render",
+    }
+    assert spans["django_drf.initial"].parent is not None
+    assert (
+        spans["django_drf.initial"].parent.span_id
+        == spans["django_drf.dispatch"].context.span_id
+    )
+    server = next(
+        span
+        for span in providers.spans.get_finished_spans()
+        if span.kind is SpanKind.SERVER
+    )
+    assert spans["django_drf.render"].parent is not None
+    assert spans["django_drf.render"].parent.span_id == server.context.span_id
+    assert not [
+        span
+        for span in providers.spans.get_finished_spans()
+        if span.name.startswith("django_ninja.django_drf.")
+    ]
 
 
 def test_operation_span_prefix_and_no_automatic_exception_logging(

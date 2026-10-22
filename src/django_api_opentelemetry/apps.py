@@ -17,11 +17,13 @@ class TelemetryConfig(AppConfig):
 
     def ready(self) -> None:
         # Keep application import time free of Django settings, middleware,
-        # telemetry and Ninja modules. Everything optional is loaded here.
+        # telemetry and optional framework modules. Everything optional is
+        # loaded here.
         from django.conf import settings
         from django.core.signals import got_request_exception
 
         from ._config import get_config
+        from ._drf import install as install_drf
         from ._ninja import install
         from .middleware import observe_django_exception
 
@@ -37,6 +39,7 @@ class TelemetryConfig(AppConfig):
             dispatch_uid=_EXCEPTION_DISPATCH_UID,
         )
         install()
+        install_drf()
 
 
 def _insert_middleware(current: Sequence[str] | None) -> Sequence[str]:
