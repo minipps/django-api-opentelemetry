@@ -15,7 +15,7 @@ if not settings.configured:
         SECRET_KEY="smoke-test-not-a-secret",
         DEBUG=False,
         ALLOWED_HOSTS=["*"],
-        INSTALLED_APPS=["django_ninja_opentelemetry"],
+        INSTALLED_APPS=["django_api_opentelemetry"],
         MIDDLEWARE=[],
         ROOT_URLCONF=__name__,
         ASGI_APPLICATION=f"{__name__}.application",
@@ -56,6 +56,6 @@ urlpatterns = [
 
 from django.core.asgi import get_asgi_application  # noqa: E402
 
-from django_ninja_opentelemetry import instrument_asgi  # noqa: E402
+from django_api_opentelemetry import instrument_asgi  # noqa: E402
 
 application = instrument_asgi(get_asgi_application())

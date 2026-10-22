@@ -1,4 +1,4 @@
-project = "django-ninja-opentelemetry"
+project = "django-api-opentelemetry"
 
 extensions = ["myst_parser"]
 root_doc = "index"

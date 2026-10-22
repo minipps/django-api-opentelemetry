@@ -19,13 +19,13 @@ from ninja import NinjaAPI
 from opentelemetry.instrumentation.django import DjangoInstrumentor
 from opentelemetry.trace import SpanKind
 
-from django_ninja_opentelemetry import _ninja
-from django_ninja_opentelemetry.apps import MIDDLEWARE_PATH
+from django_api_opentelemetry import _ninja
+from django_api_opentelemetry.apps import MIDDLEWARE_PATH
 
 if TYPE_CHECKING:
     from tests.conftest import TelemetryProviders
 
-PACKAGE_SCOPE = "django_ninja_opentelemetry"
+PACKAGE_SCOPE = "django_api_opentelemetry"
 EXTERNAL_SCOPE = "opentelemetry.instrumentation.django"
 VALIDATION_EVENT = "django_ninja.validation.failed"
 EXCEPTION_EVENT = "http.server.request.exception"

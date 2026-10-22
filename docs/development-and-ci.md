@@ -226,10 +226,12 @@ Local verification completed on 2026-10-22:
 - The plain-Django-without-Ninja job passed with 185 tests and 42 skips; the
   API-only-without-SDK job passed with 84 tests and 143 skips.
 
-The CI scripts and workflows were locally reviewed; actionlint and the
-distribution/release self-checks pass. They are committed in `f07ea9b`. The
-workflow files have not executed on GitHub because no Git remote is configured,
-so GitHub execution remains unverified.
+The CI scripts and workflows are committed in `f07ea9b`; actionlint and the
+distribution/release self-checks pass. The `v0.1.0` GitHub Actions run passed
+the release gate and CI, then failed at PyPI publishing because the package
+metadata used the old distribution name while the intended PyPI project is
+`django-api-opentelemetry`. The package metadata and release links now use the
+intended name; the corrected distributions still need a tagged publish run.
 
 ## Continuous delivery
 
@@ -251,22 +253,15 @@ The publishing flow follows PyPI's documented
 [Trusted Publishing setup](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
 rather than forwarding OIDC tokens into project containers.
 
-No release has been published, and no publisher records or GitHub environments
-have been created. No Git remote is configured, so no workflow run or GitHub
-release exists. The external setup is still required from a maintainer:
+The `v0.1.0` GitHub Release exists. Its first attached artifacts were built
+under the old distribution name and should be replaced by the corrected,
+verified distributions. The first PyPI upload did not complete. Confirm the
+Trusted Publisher record targets `django-api-opentelemetry`. The workflow uses
+the `testpypi` and `pypi` GitHub environments and binds the publisher identity
+to the repository, `release.yml`, and the matching environment.
 
-- create the GitHub repository/remote and run CI there;
-- create the `testpypi` and `pypi` GitHub environments with the expected
-  protection rules;
-- register Trusted Publishers for the repository, workflow filename
-  `release.yml`, and those environments on TestPyPI/PyPI;
-- confirm ownership and project settings before the first publication.
-
-The package name `django-ninja-opentelemetry` returned HTTP 404 from the PyPI
-JSON API on 2026-10-22, which indicates it was available at that lookup. That is
-not a reservation or a guarantee that it remains available. Repository owner,
-publisher records and final name ownership must be verified when the remote is
-connected.
+The distribution name is `django-api-opentelemetry`, and its Python import
+package is `django_api_opentelemetry`.
 
 Docker Hub/GHCR publishing, deployment platforms, Kubernetes and dashboards are
 not part of this release.

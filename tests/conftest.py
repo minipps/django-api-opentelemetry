@@ -96,7 +96,7 @@ def telemetry_providers() -> Iterator[TelemetryProviders]:
         InMemorySpanExporter,
     )
 
-    resource = Resource.create({"service.name": "django-ninja-opentelemetry-tests"})
+    resource = Resource.create({"service.name": "django-api-opentelemetry-tests"})
 
     span_exporter = InMemorySpanExporter()
     tracer_provider = TracerProvider(resource=resource)

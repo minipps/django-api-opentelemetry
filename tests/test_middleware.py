@@ -30,10 +30,10 @@ from opentelemetry import trace
 from opentelemetry.propagate import inject
 from opentelemetry.trace import NonRecordingSpan, SpanContext, SpanKind, TraceFlags
 
-from django_ninja_opentelemetry import middleware as middleware_module
-from django_ninja_opentelemetry._config import Config
-from django_ninja_opentelemetry._telemetry import REQUEST_STATE_ATTRIBUTE
-from django_ninja_opentelemetry.middleware import (
+from django_api_opentelemetry import middleware as middleware_module
+from django_api_opentelemetry._config import Config
+from django_api_opentelemetry._telemetry import REQUEST_STATE_ATTRIBUTE
+from django_api_opentelemetry.middleware import (
     TelemetryMiddleware,
     observe_django_exception,
 )
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from tests.conftest import TelemetryProviders
 
 
-MIDDLEWARE_PATH = "django_ninja_opentelemetry.middleware.TelemetryMiddleware"
+MIDDLEWARE_PATH = "django_api_opentelemetry.middleware.TelemetryMiddleware"
 DURATION = "http.server.request.duration"
 ACTIVE = "http.server.active_requests"
 

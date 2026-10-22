@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from django_ninja_opentelemetry import _runtime
-from django_ninja_opentelemetry._config import Config
+from django_api_opentelemetry import _runtime
+from django_api_opentelemetry._config import Config
 
 
 # These tests exercise real SDK processors and OTLP HTTP exporters in
@@ -170,8 +170,8 @@ def test_import_is_lazy_and_without_auto_configure(
 
         from opentelemetry import _logs, metrics, trace
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         assert not any(
             name == "opentelemetry.sdk" or name.startswith("opentelemetry.sdk.")
@@ -382,8 +382,8 @@ def test_auto_configure_without_endpoint_imports_no_sdk() -> None:
 
         from opentelemetry import _logs, metrics, trace
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         before = (
             trace.get_tracer_provider(),
@@ -417,8 +417,8 @@ def test_auto_configure_base_endpoint_sets_all_signal_providers() -> None:
         from opentelemetry.sdk.metrics import MeterProvider
         from opentelemetry.sdk.trace import TracerProvider
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         _runtime._make_component = make_component
 
@@ -469,8 +469,8 @@ def test_signal_endpoint_overrides_and_exporter_none_skips_signals() -> None:
         from opentelemetry import _logs, metrics, trace
         from opentelemetry.sdk.trace import TracerProvider
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         _runtime._make_component = make_component
 
@@ -512,8 +512,8 @@ def test_protocol_validation_is_isolated_per_signal() -> None:
 
         from opentelemetry import _logs, metrics, trace
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         _runtime._make_component = make_component
 
@@ -555,8 +555,8 @@ def test_invalid_endpoint_warning_does_not_leak_url_or_credentials() -> None:
 
         from opentelemetry import _logs, metrics, trace
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         before = (
             trace.get_tracer_provider(),
@@ -597,8 +597,8 @@ def test_missing_optional_sdk_dependencies_fail_open() -> None:
 
         from opentelemetry import _logs, metrics, trace
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
 
         class BlockSdk:
@@ -649,8 +649,8 @@ def test_one_signal_setup_failure_does_not_block_the_others() -> None:
         from opentelemetry.sdk._logs import LoggerProvider
         from opentelemetry.sdk.trace import TracerProvider
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         def broken_component(signal, endpoint):
             if signal.name == "metrics":
@@ -684,8 +684,8 @@ def test_failed_global_install_leaves_no_orphan_components() -> None:
 
         from opentelemetry import _logs, metrics, trace
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         _runtime._make_component = make_component
 
@@ -729,8 +729,8 @@ def test_unsupported_supplied_providers_are_preserved() -> None:
 
         from opentelemetry import _logs, metrics, trace
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         _runtime._make_component = make_component
 
@@ -782,8 +782,8 @@ def test_explicit_noop_global_providers_remain_noop() -> None:
 
         from opentelemetry import _logs, metrics, trace
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         _runtime._make_component = make_component
 
@@ -818,8 +818,8 @@ def test_repeated_concurrent_first_use_registers_once() -> None:
         import json
         from concurrent.futures import ThreadPoolExecutor
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         _runtime._make_component = make_component
 
@@ -854,8 +854,8 @@ def test_sdk_disabled_does_not_import_or_configure_sdk() -> None:
 
         from opentelemetry import _logs, metrics, trace
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         before = (
             trace.get_tracer_provider(),
@@ -890,8 +890,8 @@ def test_fork_resets_package_state_and_cleanup_ownership() -> None:
         import os
         import select
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         _runtime._make_component = make_component
 
@@ -985,8 +985,8 @@ def test_disabled_config_signals_create_no_components() -> None:
         from opentelemetry import _logs, metrics, trace
         from opentelemetry.sdk._logs import LoggerProvider
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         _runtime._make_component = make_component
 
@@ -1017,8 +1017,8 @@ def test_two_explicit_providers_each_register_once() -> None:
         + """
         import json
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         _runtime._make_component = make_component
 
@@ -1098,8 +1098,8 @@ def test_failed_factory_attempts_and_warnings_happen_once_per_signal() -> None:
 
         from opentelemetry import _logs, metrics, trace
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         CALLS = []
 
@@ -1139,8 +1139,8 @@ def test_attempt_without_endpoint_is_not_retried_after_environment_changes() -> 
 
         from opentelemetry import _logs, metrics, trace
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         calls = []
 
@@ -1178,8 +1178,8 @@ def test_new_provider_registration_failure_cleans_component_and_provider() -> No
 
         logging.basicConfig(level=logging.WARNING, format="%(message)s")
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         _runtime._make_component = make_component
 
@@ -1233,8 +1233,8 @@ def test_normal_cleanup_returns_promptly_without_timeout_warning() -> None:
         import json
         import time
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         EVENTS = []
 
@@ -1284,8 +1284,8 @@ def test_slow_atexit_cleanup_is_bounded() -> None:
         """
         import time
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
 
         class SlowComponent:
@@ -1347,8 +1347,8 @@ def test_normal_interpreter_exit_flushes_metrics_over_http() -> None:
     try:
         result = run_script(
             """
-            from django_ninja_opentelemetry import _runtime
-            from django_ninja_opentelemetry._config import Config
+            from django_api_opentelemetry import _runtime
+            from django_api_opentelemetry._config import Config
 
             providers = _runtime.get_providers(
                 Config(auto_configure=True, tracing=False, logs=False)
@@ -1389,9 +1389,9 @@ def test_public_shutdown_flushes_once_before_closing_owned_resources() -> None:
         import asyncio
         import json
 
-        from django_ninja_opentelemetry import shutdown
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import shutdown
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
         EVENTS = []
 
@@ -1440,8 +1440,8 @@ def test_existing_foreign_globals_are_preserved_across_fork() -> None:
 
         from opentelemetry import _logs, metrics, trace
 
-        from django_ninja_opentelemetry import _runtime
-        from django_ninja_opentelemetry._config import Config
+        from django_api_opentelemetry import _runtime
+        from django_api_opentelemetry._config import Config
 
 
         class Provider:

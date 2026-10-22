@@ -63,7 +63,7 @@ from __future__ import annotations
 import importlib.metadata as metadata
 import pathlib
 
-import django_ninja_opentelemetry
+import django_api_opentelemetry
 
 for name in (
     "Django",
@@ -78,7 +78,7 @@ for name in (
     except metadata.PackageNotFoundError:
         print(f"{name}=<not installed>")
 
-origin = pathlib.Path(django_ninja_opentelemetry.__file__).resolve()
+origin = pathlib.Path(django_api_opentelemetry.__file__).resolve()
 print(f"project={origin}")
 if "/workspace/src" in origin.as_posix():
     raise SystemExit(f"compat project imported from the source tree: {origin}")

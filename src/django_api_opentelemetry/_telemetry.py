@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 #: Explicit per-request state attribute stored on ``HttpRequest``.
 REQUEST_STATE_ATTRIBUTE = "_django_ninja_otel"
 
-_INSTRUMENTATION_NAME = "django_ninja_opentelemetry"
+_INSTRUMENTATION_NAME = "django_api_opentelemetry"
 _DURATION_NAME = "http.server.request.duration"
 _ACTIVE_REQUESTS_NAME = "http.server.active_requests"
 _DURATION_BUCKETS = (

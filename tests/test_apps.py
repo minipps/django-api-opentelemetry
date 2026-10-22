@@ -11,19 +11,19 @@ from typing import Any
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
-import django_ninja_opentelemetry
-from django_ninja_opentelemetry.apps import MIDDLEWARE_PATH, TelemetryConfig
+import django_api_opentelemetry
+from django_api_opentelemetry.apps import MIDDLEWARE_PATH, TelemetryConfig
 
 
 @pytest.fixture
 def app_config() -> TelemetryConfig:
-    return TelemetryConfig("django_ninja_opentelemetry", django_ninja_opentelemetry)
+    return TelemetryConfig("django_api_opentelemetry", django_api_opentelemetry)
 
 
 def _receiver_count() -> int:
     from django.core.signals import got_request_exception
 
-    from django_ninja_opentelemetry.middleware import observe_django_exception
+    from django_api_opentelemetry.middleware import observe_django_exception
 
     live = got_request_exception._live_receivers(None)
     receivers = [*live[0], *live[1]] if isinstance(live, tuple) else live
@@ -41,10 +41,10 @@ def _run_python(code: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_app_config_is_discovered() -> None:
-    config = TelemetryConfig.create("django_ninja_opentelemetry")
+    config = TelemetryConfig.create("django_api_opentelemetry")
 
     assert type(config) is TelemetryConfig
-    assert config.name == "django_ninja_opentelemetry"
+    assert config.name == "django_api_opentelemetry"
 
 
 def test_apps_import_does_not_load_activation_modules() -> None:
@@ -53,12 +53,12 @@ def test_apps_import_does_not_load_activation_modules() -> None:
             """
             import sys
 
-            import django_ninja_opentelemetry.apps
+            import django_api_opentelemetry.apps
 
             loaded = (
-                "django_ninja_opentelemetry._ninja",
-                "django_ninja_opentelemetry._telemetry",
-                "django_ninja_opentelemetry.middleware",
+                "django_api_opentelemetry._ninja",
+                "django_api_opentelemetry._telemetry",
+                "django_api_opentelemetry.middleware",
             )
             assert not any(name in sys.modules for name in loaded), loaded
             print("import-ok")
@@ -189,7 +189,7 @@ def test_plain_django_startup_without_optional_imports() -> None:
                 SECRET_KEY="plain-django-test-only",
                 DEBUG=False,
                 ALLOWED_HOSTS=["testserver"],
-                INSTALLED_APPS=["django_ninja_opentelemetry"],
+                INSTALLED_APPS=["django_api_opentelemetry"],
                 MIDDLEWARE=[],
                 DATABASES={},
                 USE_TZ=True,
@@ -203,19 +203,19 @@ def test_plain_django_startup_without_optional_imports() -> None:
 
             from django.apps import apps
 
-            from django_ninja_opentelemetry._config import get_config
-            from django_ninja_opentelemetry.apps import TelemetryConfig
+            from django_api_opentelemetry._config import get_config
+            from django_api_opentelemetry.apps import TelemetryConfig
 
             middleware = (
-                "django_ninja_opentelemetry.middleware.TelemetryMiddleware"
+                "django_api_opentelemetry.middleware.TelemetryMiddleware"
             )
             assert settings.MIDDLEWARE == [middleware], settings.MIDDLEWARE
             assert isinstance(
-                apps.get_app_config("django_ninja_opentelemetry"), TelemetryConfig
+                apps.get_app_config("django_api_opentelemetry"), TelemetryConfig
             )
             assert get_config().tracing is True
             assert after == before, (before, after)
-            assert "django_ninja_opentelemetry.middleware" in sys.modules
+            assert "django_api_opentelemetry.middleware" in sys.modules
 
             forbidden = (
                 "ninja",
@@ -243,7 +243,7 @@ def test_plain_django_startup_without_optional_imports() -> None:
 def test_demo_settings_are_instrumented() -> None:
     from tests.project import demo_settings
 
-    assert demo_settings.INSTALLED_APPS == ["django_ninja_opentelemetry"]
+    assert demo_settings.INSTALLED_APPS == ["django_api_opentelemetry"]
     assert demo_settings.ROOT_URLCONF == "tests.project.ninja_urls"
     assert demo_settings.DEBUG is False
     assert set(demo_settings.ALLOWED_HOSTS) >= {"localhost", "127.0.0.1", "testserver"}
@@ -252,5 +252,5 @@ def test_demo_settings_are_instrumented() -> None:
 def test_baseline_settings_remain_uninstrumented() -> None:
     from tests.project import settings as baseline
 
-    assert "django_ninja_opentelemetry" not in baseline.INSTALLED_APPS
+    assert "django_api_opentelemetry" not in baseline.INSTALLED_APPS
     assert baseline.MIDDLEWARE == []

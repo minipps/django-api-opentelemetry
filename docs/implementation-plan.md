@@ -2,8 +2,8 @@
 
 ## Goal and agreed scope
 
-Build `django-ninja-opentelemetry`, imported as
-`django_ninja_opentelemetry`, as a reusable installed Django app. One
+Build `django-api-opentelemetry`, imported as
+`django_api_opentelemetry`, as a reusable installed Django app. One
 `INSTALLED_APPS` entry enables Django-wide HTTP traces, metrics and exception
 logs, with deeper instrumentation for ordinary Django Ninja APIs. Endpoint
 decorators and a replacement `NinjaAPI` class are not required.
@@ -75,13 +75,13 @@ and [router binding](https://github.com/vitalik/django-ninja/blob/v1.7.1/ninja/r
 ## Installation and public configuration
 
 ```bash
-pip install "django-ninja-opentelemetry[ninja,otlp]"
+pip install "django-api-opentelemetry[ninja,otlp]"
 ```
 
 ```python
 INSTALLED_APPS = [
     # Existing applications...
-    "django_ninja_opentelemetry",
+    "django_api_opentelemetry",
 ]
 ```
 
@@ -106,7 +106,7 @@ installed-app setup:
 # asgi.py
 from django.core.asgi import get_asgi_application
 
-from django_ninja_opentelemetry import instrument_asgi
+from django_api_opentelemetry import instrument_asgi
 
 application = instrument_asgi(get_asgi_application())
 ```

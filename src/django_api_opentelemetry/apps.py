@@ -6,14 +6,14 @@ from collections.abc import Sequence
 
 from django.apps import AppConfig
 
-MIDDLEWARE_PATH = "django_ninja_opentelemetry.middleware.TelemetryMiddleware"
-_EXCEPTION_DISPATCH_UID = "django_ninja_opentelemetry.observe_django_exception"
+MIDDLEWARE_PATH = "django_api_opentelemetry.middleware.TelemetryMiddleware"
+_EXCEPTION_DISPATCH_UID = "django_api_opentelemetry.observe_django_exception"
 
 
 class TelemetryConfig(AppConfig):
     """Validate configuration and activate HTTP, signal and Ninja hooks."""
 
-    name = "django_ninja_opentelemetry"
+    name = "django_api_opentelemetry"
 
     def ready(self) -> None:
         # Keep application import time free of Django settings, middleware,

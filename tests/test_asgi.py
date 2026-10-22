@@ -14,7 +14,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from django_ninja_opentelemetry import _runtime, instrument_asgi, shutdown
+from django_api_opentelemetry import _runtime, instrument_asgi, shutdown
 
 
 async def _wait_for_send(sent: list[dict[str, Any]]) -> None:
@@ -123,7 +123,7 @@ def test_real_uvicorn_sends_lifespan_shutdown(tmp_path: Path) -> None:
             import os
             from pathlib import Path
 
-            from django_ninja_opentelemetry import _runtime, instrument_asgi
+            from django_api_opentelemetry import _runtime, instrument_asgi
 
 
             def fake_shutdown() -> None:
@@ -226,14 +226,14 @@ class BlockOptionalImports:
 
 sys.meta_path.insert(0, BlockOptionalImports())
 
-import django_ninja_opentelemetry as package
+import django_api_opentelemetry as package
 from django.conf import settings
 
 assert not settings.configured
 assert package.__version__ == "0.1.0"
 assert package.shutdown is package._runtime.shutdown
 
-from django_ninja_opentelemetry import _runtime
+from django_api_opentelemetry import _runtime
 
 active_before = threading.active_count()
 assert _runtime._state.cleanup is None

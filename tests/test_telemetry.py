@@ -17,9 +17,9 @@ from opentelemetry._logs import SeverityNumber
 from opentelemetry.propagate import inject
 from opentelemetry.trace import NonRecordingSpan, SpanContext, SpanKind, TraceFlags
 
-from django_ninja_opentelemetry import _telemetry
-from django_ninja_opentelemetry._config import Config
-from django_ninja_opentelemetry._telemetry import (
+from django_api_opentelemetry import _telemetry
+from django_api_opentelemetry._config import Config
+from django_api_opentelemetry._telemetry import (
     REQUEST_STATE_ATTRIBUTE,
     activate,
     begin_request,

@@ -59,7 +59,7 @@ class _CleanupWorker:
         self._requests: queue.SimpleQueue[list[Any]] = queue.SimpleQueue()
         self._thread = threading.Thread(
             target=self._run,
-            name="django-ninja-opentelemetry-cleanup",
+            name="django-api-opentelemetry-cleanup",
             daemon=True,
         )
         self._thread.start()

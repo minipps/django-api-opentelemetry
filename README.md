@@ -1,4 +1,4 @@
-# django-ninja-opentelemetry
+# django-api-opentelemetry
 
 OpenTelemetry traces, metrics and exception logs for Django, with deeper
 instrumentation for Django Ninja APIs.
@@ -30,14 +30,14 @@ limited to validation warnings and unexpected request exceptions.
 The base package supports plain Django without Ninja or the SDK/exporters:
 
 ```bash
-pip install django-ninja-opentelemetry
+pip install django-api-opentelemetry
 ```
 
 Add the optional extras when the application uses Django Ninja or the bundled
 OTLP export setup:
 
 ```bash
-pip install "django-ninja-opentelemetry[ninja,otlp]"
+pip install "django-api-opentelemetry[ninja,otlp]"
 ```
 
 Supported versions:
@@ -56,7 +56,7 @@ hooks:
 ```python
 INSTALLED_APPS = [
     # Existing applications...
-    "django_ninja_opentelemetry",
+    "django_api_opentelemetry",
 ]
 ```
 
@@ -74,7 +74,7 @@ For reliable export flushing on ASGI servers, wrap the Django ASGI application:
 # asgi.py
 from django.core.asgi import get_asgi_application
 
-from django_ninja_opentelemetry import instrument_asgi
+from django_api_opentelemetry import instrument_asgi
 
 application = instrument_asgi(get_asgi_application())
 ```
@@ -91,7 +91,7 @@ For other worker types, call the synchronous `shutdown()` from a worker-exit hoo
 after requests have drained:
 
 ```python
-from django_ninja_opentelemetry import shutdown
+from django_api_opentelemetry import shutdown
 
 shutdown()
 ```

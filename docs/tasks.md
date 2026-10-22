@@ -1,8 +1,10 @@
 # Atomic implementation tasks
 
-Implementation and local verification are complete. T0-T11 are complete, T12 is
-locally verified but has no GitHub execution because no remote is configured, and
-T13 is prepared with external publisher setup and publication still remaining.
+Implementation and local verification are complete. T0-T11 are complete. T12
+also passed in the first tagged GitHub Actions run. T13 created the `v0.1.0`
+GitHub Release, but the PyPI upload failed because the distribution metadata
+used the old name; the metadata now targets `django-api-opentelemetry` for the
+retry.
 The [implementation plan](implementation-plan.md) defines behavior and the
 [Docker contract](development-and-ci.md) defines the execution environment. Each
 task is complete only when its listed acceptance checks pass; implementation
@@ -50,8 +52,8 @@ container runs in this checkout.
 | T9 — Streaming and file response lifecycle | Complete | Commit `e4d5e43`; lazy sync/async streaming, early close, cancellation and file-response tests are included in the final suite. |
 | T10 — Installed-app activation | Complete | Commit `4caecca`; middleware insertion, Django exception signal registration, Ninja activation and app-laziness regression test. |
 | T11 — Conformance and collector smoke test | Complete | Commits `8995e82` and `ae4bcc0`; real contrib coexistence and built-wheel live-collector smoke with three SERVER spans, one WARN, one ERROR and both HTTP metrics. |
-| T12 — Container CI and distribution verification | Locally verified; external GitHub unverified | `scripts/check.sh all` passed Ruff, format, ty and 227 tests. Nine Python/Django matrix jobs each passed 225 with 2 skipped; Ninja 1.7.0 and OTel 1.44 baselines each 225 with 2 skipped; plain Django 185 with 42 skipped; API-only 84 with 143 skipped. Wheel/sdist checks pass. CI scripts/workflows are committed in `f07ea9b`; actionlint and self-checks pass. No GitHub run exists because no remote is configured. |
-| T13 — Release workflow and documentation handoff | Prepared; external publisher setup remaining | Release workflow is committed in `f07ea9b` and documentation is updated. Trusted Publisher records, PyPI/TestPyPI environments, repository remote, actual GitHub execution and publication remain external and unverified. |
+| T12 — Container CI and distribution verification | Verified locally and on GitHub | `scripts/check.sh all` passed Ruff, format, ty and 227 tests. The first `v0.1.0` tagged run passed its release gate and reusable CI; its PyPI publishing job rejected the old distribution name. |
+| T13 — Release workflow and documentation handoff | GitHub release created; PyPI retry pending | `v0.1.0` is on GitHub. Its initial assets use the old distribution name. Metadata, install instructions, verifier and workflow links now target `django-api-opentelemetry`; rebuilt artifacts and a tagged retry remain. |
 
 Final evidence:
 
@@ -269,9 +271,9 @@ and release workflows).
    against the frozen specification, but final examples use the built wheel.
 
 The actual run followed this dependency order in the shared checkout described
-above. T0-T11 are complete and verified locally. T12 is locally verified with
-GitHub execution unverified, and T13 is prepared pending external publisher
-setup and publication.
+above. T0-T11 are complete and verified locally. T12 passed on GitHub in the
+first tagged run. T13 created the GitHub Release; the PyPI publishing job failed
+on the old distribution name and awaits the corrected tagged run.
 
 Do not dispatch dependent tasks early as independently mergeable work. A failed
 acceptance check stays with its module owner; the coordinator resolves changes

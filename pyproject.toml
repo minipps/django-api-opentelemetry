@@ -3,7 +3,7 @@ requires = ["uv_build>=0.13,<0.14"]
 build-backend = "uv_build"
 
 [project]
-name = "django-ninja-opentelemetry"
+name = "django-api-opentelemetry"
 version = "0.1.0"
 description = "OpenTelemetry traces, metrics and exception logs for Django and Django Ninja"
 readme = "README.md"

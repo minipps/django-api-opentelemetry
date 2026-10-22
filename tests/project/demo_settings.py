@@ -13,5 +13,5 @@ DEBUG = False
 ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
 SECRET_KEY = "demo-test-only-not-a-secret"
 
-INSTALLED_APPS = ["django_ninja_opentelemetry"]
+INSTALLED_APPS = ["django_api_opentelemetry"]
 ROOT_URLCONF = "tests.project.ninja_urls"

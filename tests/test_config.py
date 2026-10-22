@@ -7,7 +7,7 @@ import pytest
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 
-from django_ninja_opentelemetry._config import Config, get_config
+from django_api_opentelemetry._config import Config, get_config
 
 if not settings.configured:
     settings.configure()

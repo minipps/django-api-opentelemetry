@@ -62,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: testpypi
-      url: https://test.pypi.org/project/django-ninja-opentelemetry/
+      url: https://test.pypi.org/project/django-api-opentelemetry/
     permissions:
       id-token: write
       attestations: write
@@ -95,7 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/django-ninja-opentelemetry/
+      url: https://pypi.org/project/django-api-opentelemetry/
     permissions:
       id-token: write
       attestations: write

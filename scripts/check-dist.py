@@ -21,14 +21,14 @@ SMOKE_CODE = """\
 import importlib.metadata as metadata
 import pathlib
 
-import django_ninja_opentelemetry
+import django_api_opentelemetry
 
-origin = pathlib.Path(django_ninja_opentelemetry.__file__).resolve()
+origin = pathlib.Path(django_api_opentelemetry.__file__).resolve()
 workspace = pathlib.Path("/workspace").resolve()
 if origin.is_relative_to(workspace):
     raise SystemExit(f"imported from the source checkout: {origin}")
 
-distribution = metadata.distribution("django-ninja-opentelemetry")
+distribution = metadata.distribution("django-api-opentelemetry")
 root = pathlib.Path(distribution.locate_file("")).resolve()
 if not origin.is_relative_to(root):
     raise SystemExit(f"{origin} is outside installed distribution {root}")
@@ -39,7 +39,7 @@ settings.configure(
     SECRET_KEY="check-dist-not-secret",
     DEBUG=False,
     ALLOWED_HOSTS=["*"],
-    INSTALLED_APPS=["django_ninja_opentelemetry"],
+    INSTALLED_APPS=["django_api_opentelemetry"],
     MIDDLEWARE=[],
     ROOT_URLCONF=__name__,
     DATABASES={},

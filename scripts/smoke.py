@@ -14,7 +14,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-SCOPE_NAME = "django_ninja_opentelemetry"
+SCOPE_NAME = "django_api_opentelemetry"
 VALIDATION_EVENT = "django_ninja.validation.failed"
 EXCEPTION_EVENT = "http.server.request.exception"
 DURATION_METRIC = "http.server.request.duration"
@@ -180,8 +180,8 @@ def run_smoke(
     process: subprocess.Popen[str] | None = None
     server_output = ""
     try:
-        package = importlib.import_module("django_ninja_opentelemetry")
-        distribution = importlib.metadata.distribution("django-ninja-opentelemetry")
+        package = importlib.import_module("django_api_opentelemetry")
+        distribution = importlib.metadata.distribution("django-api-opentelemetry")
         origin = Path(package.__file__).resolve()
         root = Path(str(distribution.locate_file(""))).resolve()
         _require(

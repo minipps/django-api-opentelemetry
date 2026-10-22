@@ -21,9 +21,9 @@ from opentelemetry import trace
 from opentelemetry._logs import SeverityNumber
 from opentelemetry.trace import SpanKind, StatusCode
 
-from django_ninja_opentelemetry import _ninja
-from django_ninja_opentelemetry._config import Config
-from django_ninja_opentelemetry._telemetry import (
+from django_api_opentelemetry import _ninja
+from django_api_opentelemetry._config import Config
+from django_api_opentelemetry._telemetry import (
     REQUEST_STATE_ATTRIBUTE,
     activate,
     begin_request,
@@ -844,7 +844,7 @@ def test_unsupported_version_warns_once_without_patching(
 
         django.setup()
 
-        from django_ninja_opentelemetry import _ninja
+        from django_api_opentelemetry import _ninja
 
         messages = []
 
@@ -892,7 +892,7 @@ def test_bad_hook_signature_warns_once_without_partial_patching() -> None:
 
         PathView.get_view = unexpected_signature
 
-        from django_ninja_opentelemetry import _ninja
+        from django_api_opentelemetry import _ninja
 
         messages = []
 
@@ -937,7 +937,7 @@ def test_missing_hook_warns_once_without_partial_patching() -> None:
 
         del Operation._result_to_response
 
-        from django_ninja_opentelemetry import _ninja
+        from django_api_opentelemetry import _ninja
 
         messages = []
 
@@ -988,7 +988,7 @@ def test_missing_ninja_is_silent_and_import_is_safe() -> None:
 
         from importlib.metadata import PackageNotFoundError
 
-        from django_ninja_opentelemetry import _ninja
+        from django_api_opentelemetry import _ninja
 
         messages = []
 
