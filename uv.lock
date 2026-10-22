@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 
 [[package]]
@@ -363,7 +363,7 @@ dev = [
     { name = "build", specifier = ">=1.2" },
     { name = "django-stubs", specifier = ">=5.2" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "opentelemetry-instrumentation-django", extras = ["asgi"], specifier = ">=0.65b0" },
+    { name = "opentelemetry-instrumentation-django", extras = ["asgi"], specifier = ">=0.66b1" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "pytest-django", specifier = ">=4.9" },
