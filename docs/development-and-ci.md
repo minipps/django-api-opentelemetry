@@ -5,7 +5,8 @@ implemented in this checkout. The files are the source of truth: `Dockerfile`,
 `compose.yaml`, `scripts/`, `ops/otel-collector.yaml` and `.github/workflows/`.
 The [implementation plan](implementation-plan.md) records the design, the
 [DRF support plan](drf-support.md) records the frozen framework contract, and
-[task status](tasks.md) records what has actually been verified.
+[task status](tasks.md) records what has actually been verified. Repository-level
+controls are listed in [CI/CD supply-chain controls](supply-chain-security.md).
 
 ## Development environment
 
@@ -14,7 +15,8 @@ managers and virtual environments are not required.
 
 The single `Dockerfile` has `dev`, `ci` and `dist` targets. The supported Python
 images are pinned by digest for 3.12, 3.13 and 3.14; `PYTHON_VERSION` defaults to
-`3.14`. uv is installed at a pinned `UV_VERSION` (currently `0.13.5`), and the
+`3.14`. uv is copied from the digest-pinned official
+`ghcr.io/astral-sh/uv:0.13.5` image instead of being installed with pip, and the
 committed `uv.lock` is installed with `uv sync --locked`. Runtime dependencies
 and development tools live under `/opt/venv`, so mounting the checkout at
 `/workspace` does not hide the environment. The development image installs the
@@ -66,10 +68,14 @@ docker compose run --rm dev ty check --python /opt/venv src
 ```
 
 `scripts/check.sh` accepts `lint`, `test` or `all` and forwards pytest arguments.
-Its lint mode runs Ruff, Ruff format check and `ty check --python /opt/venv src`.
-The explicit `--python /opt/venv` matters because a host-created `.venv` under the
-mounted checkout can otherwise be detected by ty and produce a `pyvenv.cfg`
-warning.
+Its lint mode runs Ruff, Ruff format check, `ty check --python /opt/venv src`
+and `zizmor --offline --persona auditor .github`. The explicit `--python /opt/venv`
+matters because a host-created `.venv` under the mounted checkout can otherwise
+be detected by ty and produce a `pyvenv.cfg` warning. zizmor is part of the
+locked `dev` dependency group, so workflow and Dependabot security checks use the same
+reproducible environment as the rest of CI. The `ci` image includes `.github` so
+the checked-in workflows and Dependabot configuration can be audited inside the
+image.
 
 The image build performs the dependency sync; normal test commands must not
 resync or rewrite the lockfile. Rebuild the image after changing `pyproject.toml`
@@ -194,19 +200,33 @@ behavior or interpreter shutdown use subprocesses.
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on pull requests and pushes to `main`, and is
-reusable from the release workflow. It has read-only repository permissions and
-uses Buildx with GitHub Actions cache. All third-party actions are pinned to
-commit SHAs: `actions/checkout` v7.0.1, `docker/setup-buildx-action` v4.4.1,
+reusable from the release workflow. It runs on `ubuntu-24.04` with explicit job
+timeouts, read-only repository permissions and `persist-credentials: false` on
+every checkout. All third-party actions are pinned to full commit SHAs:
+`actions/checkout` v7.0.1, `docker/setup-buildx-action` v4.4.1,
 `docker/build-push-action` v7.4.0, `actions/upload-artifact` v7.0.2,
 `actions/download-artifact` v8.0.2 and `pypa/gh-action-pypi-publish` v1.14.3.
-Docker documents the [GitHub Actions integration](https://docs.docker.com/build/ci/github-actions/)
+Docker base images, the uv bootstrap image and the BuildKit image are pinned by
+digest, and the Dockerfile frontend directive is digest-pinned as well. BuildKit
+is passed inline through `driver-opts` on every Buildx setup, so updating that
+digest is an explicit manual review rather than a tag-following update. Docker
+documents the [GitHub Actions integration](https://docs.docker.com/build/ci/github-actions/)
 and [multi-stage build targets](https://docs.docker.com/build/building/multi-stage/).
+
+CI deliberately does not use the GitHub Actions cache. Buildx never reads or
+writes `type=gha` cache entries, so a publishing artifact cannot consume mutable
+cache state written by an earlier run. Local Docker/BuildKit layer reuse within a
+single fresh runner and the Dockerfile's uv cache mounts remain; those layers are
+not shared between jobs or workflow runs. The tradeoff is slower cold builds for
+reproducible, isolated release artifacts.
 
 The jobs are:
 
 1. **Lint and default environment** — validate `docker compose config`, build the
    `ci` image, run the `check-dist.py` and `check-release.py` self-tests, then run
-   `scripts/check.sh all` against the committed locked environment.
+   `scripts/check.sh all` against the committed locked environment. The same
+   locked image runs `zizmor --offline --persona auditor .github` and fails on
+   any finding, including low-severity auditor findings with no suppressions.
 2. **Python/Django matrix** — nine jobs for Python 3.12/3.13/3.14 and Django
    5.2/6.0/6.1, using `Django~=X.0`, Ninja 1.7.1, DRF 3.18.3 and the
    `ninja,drf,otlp` extras through `scripts/compat.sh`.
@@ -214,9 +234,10 @@ The jobs are:
    3.16.1, DRF 3.17.2, plain Django without Ninja or DRF, API-only without the
    SDK/exporters, DRF without Ninja, and the minimum OpenTelemetry 1.44
    dependency set. These use Python 3.12 and Django 5.2.
-4. **Artifacts** — build wheel/sdist from the `dist` target, verify both wheel
-   origins with `scripts/check-dist.py` outside the source tree, record SHA-256
-   hashes and upload the checked distributions.
+4. **Artifacts** — build wheel/sdist from the `dist` target on a fresh runner
+   without external cache, verify both wheel origins with `scripts/check-dist.py`
+   outside the source tree, record SHA-256 hashes and upload the checked
+   distributions.
 5. **Collector smoke** — download the checked distribution artifact, verify its
    hashes, start the collector under a unique Compose project name, run the
    smoke service, capture collector logs, and tear down the profile with `down -v`.
@@ -276,21 +297,62 @@ trigger this workflow, which runs on pull requests and pushes to `main`, and a
 temporary DNS error delayed the feature-branch pushes, so no remote CI run or
 release is claimed.
 
+Supply-chain hardening verification in this checkout on 2026-10-22:
+
+- The rebuilt `ci` image ran `scripts/check.sh all`: Ruff lint, Ruff format, ty,
+  `zizmor --offline --persona auditor .github` and 294 tests passed. zizmor
+  audited the Dependabot configuration and both workflows in auditor mode, and
+  reported no findings and no suppressions.
+- The `ci` and `dist` targets built through BuildKit `v0.33.1` pinned by digest,
+  with the Dockerfile frontend digest and the digest-pinned uv bootstrap image.
+  `docker compose config` accepted the updated build arguments.
+- The exported wheel and sdist passed `scripts/check-dist.py` in the same
+  environment: `twine check --strict`, clean wheel import, rebuild from the
+  sdist, and the plain-Django request all passed.
+- `scripts/check-release.py --self-test` passed inside the image; the real
+  `v0.1.0` check returned `version=0.1.0` and `prerelease=false`, while a
+  malformed `v0.2` tag was rejected.
+- Both workflow files parse, every `actions/checkout` sets
+  `persist-credentials: false`, and no `type=gha` Buildx cache entries remain.
+  No remote GitHub Actions run is claimed for this branch.
+
+The latest published Actionlint (v1.7.12) predates GitHub's July 2026 `$/.`
+self-repository syntax, so it cannot validate that reference directly. The
+release workflow keeps `$/.github/workflows/ci.yml`; zizmor and GitHub's
+documented syntax validate it, and Actionlint v1.7.12 passes both workflows when
+only that token is normalized in a temporary copy for the older parser.
+
 ## Continuous delivery
 
 `.github/workflows/release.yml` is prepared for version tags `vX.Y.Z`:
 
-1. `release-gate` checks out full history, requires the tagged commit to be an
-   ancestor of `origin/main`, and runs `scripts/check-release.py` to verify a
-   normalized PEP 440 version matching `project.version`. Prereleases are
-   identified from the tag.
+1. `release-gate` is gated on a genuine `push` of a `refs/tags/v*` tag. It checks
+   out full history with credentials not persisted, requires the tagged commit to
+   be an ancestor of `origin/main`, and only then builds the existing `ci` image.
+   The `check-release.py` self-test and tag check run inside that image's
+   uv-locked environment, so no `pip install` step fetches an unpinned or
+   unhashed helper. The check verifies a normalized PEP 440 version matching
+   `project.version`; prereleases are identified from the tag.
 2. The reusable CI workflow runs the same container checks on the tagged commit.
-3. Prereleases publish to TestPyPI and stable versions publish to PyPI using the
-   official PyPA container action with OIDC Trusted Publishing and attestations.
-   The downloaded `dist` artifact is checked against `SHA256SUMS`; publishing
-   consumes the exact artifacts produced and verified by CI.
-4. Only the publishing jobs receive `id-token: write` and
-   `attestations: write`. Ordinary test jobs remain read-only.
+   Release CI uses the fixed `ci-*` namespace while the release orchestrator uses
+   `release-*`, so caller and callee cannot cancel one another; tag-triggered CI
+   also never cancels in progress.
+3. Prereleases publish to TestPyPI and stable versions publish to PyPI in fresh
+   jobs that only download the `dist` artifact, verify it against `SHA256SUMS`,
+   and invoke the pinned official PyPA action. They do not check out source or
+   build anything under `id-token: write`.
+4. Only the publishing jobs receive `id-token: write`; no `attestations: write`
+   permission is granted. PyPA's action exchanges that OIDC identity for a
+   short-lived PyPI token and signs PEP 740 attestations with the same identity,
+   as documented in its
+   [Trusted Publishing usage](https://github.com/pypa/gh-action-pypi-publish#trusted-publishing).
+
+The wheel and sdist are built once by CI on a fresh runner with no external
+cache. Their SHA-256 hashes are recorded in `SHA256SUMS`, and the `dist` artifact
+is the only handoff. Every later job verifies those exact hashes before use, so
+publishing consumes the same immutable bytes that CI verified rather than a
+rebuild. Pull-request and ordinary CI jobs stay read-only, with no secrets, OIDC
+permission or shared Actions cache.
 
 The publishing flow follows PyPI's documented
 [Trusted Publishing setup](https://docs.pypi.org/trusted-publishers/using-a-publisher/)

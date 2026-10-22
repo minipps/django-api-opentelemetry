@@ -18,6 +18,7 @@ if [[ "${mode}" == "lint" || "${mode}" == "all" ]]; then
     python -m ruff check .
     python -m ruff format --check .
     ty check --python /opt/venv src
+    zizmor --offline --persona auditor .github
 fi
 
 if [[ "${mode}" == "test" || "${mode}" == "all" ]]; then
