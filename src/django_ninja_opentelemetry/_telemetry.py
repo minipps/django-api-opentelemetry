@@ -505,6 +505,8 @@ def finish_request(
     failed = (
         state.status_code is not None and state.status_code >= 500
     ) or state.error_type is not None
+    if failed and state.error_type is None:
+        state.error_type = str(state.status_code)
 
     try:
         if state.span is not None:
@@ -563,6 +565,8 @@ def _record_duration(state: RequestTelemetry, route: str | None) -> None:
         attributes[_ROUTE_ATTRIBUTE] = route
     if state.status_code is not None:
         attributes[_STATUS_ATTRIBUTE] = state.status_code
+    if state.error_type is not None:
+        attributes[_ERROR_TYPE_ATTRIBUTE] = state.error_type
     duration.record(max(0.0, time.monotonic() - state.started), attributes)
 
 

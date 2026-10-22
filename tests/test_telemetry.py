@@ -686,6 +686,50 @@ def test_finish_marks_5xx_and_records_unexpected_errors_once(
     assert spans[2].attributes["error.type"] == "RuntimeError"
 
 
+def test_error_type_is_shared_by_failed_spans_and_duration(
+    providers: Providers,
+) -> None:
+    config = make_config(providers)
+    plain = begin_request(make_request(path="/plain/"), config)
+    assert plain is not None
+    plain.route = "/plain"
+    finish_request(plain, 500)
+
+    late = begin_request(make_request(path="/after/"), config)
+    assert late is not None
+    late.route = "/after"
+    record_exception(late, RuntimeError("after status"))
+    finish_request(late, 200)
+
+    assert len(log_records(providers)) == 1
+
+    spans = {
+        span.attributes["http.route"]: span
+        for span in providers.spans.get_finished_spans()
+    }
+    assert spans["/plain"].status.status_code is trace.StatusCode.ERROR
+    assert spans["/plain"].attributes["error.type"] == "500"
+    assert spans["/after"].status.status_code is trace.StatusCode.ERROR
+    assert spans["/after"].attributes["error.type"] == "RuntimeError"
+
+    points = {
+        point.attributes["http.route"]: point
+        for point in metrics_by_name(providers)[_DURATION].data.data_points
+    }
+    assert points["/plain"].attributes["http.response.status_code"] == 500
+    assert points["/plain"].attributes["error.type"] == "500"
+    assert points["/after"].attributes["http.response.status_code"] == 200
+    assert points["/after"].attributes["error.type"] == "RuntimeError"
+
+    active = metrics_by_name(providers)[_ACTIVE].data.data_points
+    assert len(active) == 1
+    assert active[0].value == 0
+    assert active[0].attributes == {
+        "http.request.method": "GET",
+        "url.scheme": "http",
+    }
+
+
 def test_server_span_has_no_automatic_exception_events(
     providers: Providers,
 ) -> None:
