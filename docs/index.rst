@@ -10,3 +10,4 @@ Django API OpenTelemetry
    implementation-plan
    tasks
    development-and-ci
+   supply-chain-security

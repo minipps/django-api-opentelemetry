@@ -1,0 +1,89 @@
+version: 2
+
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    allow:
+      - dependency-type: all
+    groups:
+      runtime:
+        patterns: [django]
+      ninja:
+        patterns: [django-ninja, "pydantic*"]
+      drf:
+        patterns: [djangorestframework]
+      # API, SDK, exporters and contrib instrumentation have coupled versions.
+      telemetry:
+        patterns: ["opentelemetry-*"]
+      development-and-transitive:
+        patterns: ["*"]
+      runtime-security:
+        applies-to: security-updates
+        patterns: [django]
+      ninja-security:
+        applies-to: security-updates
+        patterns: [django-ninja, "pydantic*"]
+      drf-security:
+        applies-to: security-updates
+        patterns: [djangorestframework]
+      telemetry-security:
+        applies-to: security-updates
+        patterns: ["opentelemetry-*"]
+      development-and-transitive-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directory: /docs
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      documentation:
+        patterns: ["*"]
+      documentation-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+      actions-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # Keep each named Python stage on its advertised matrix version.
+    ignore:
+      - dependency-name: python
+        update-types: [version-update:semver-major, version-update:semver-minor]
+    groups:
+      build-images:
+        patterns: ["*"]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      collector-images:
+        patterns: ["*"]

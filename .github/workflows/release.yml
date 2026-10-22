@@ -8,13 +8,23 @@ permissions:
   contents: read
 
 concurrency:
+  # Release runs never cancel one another. The reusable CI workflow uses the
+  # separate ci-* namespace, so its cancellation policy cannot affect this run.
   group: release-${{ github.ref }}
   cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.14"
 
 jobs:
   release-gate:
     name: Validate tag and package version
-    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' &&
+      github.ref_type == 'tag' &&
+      startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     outputs:
       version: ${{ steps.metadata.outputs.version }}
       prerelease: ${{ steps.metadata.outputs.prerelease }}
@@ -24,12 +34,38 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Verify tagged commit is on main
         run: |
           set -euo pipefail
           git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
           git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+
+      # Build only after the tag commit is proven to be on main. The ci target
+      # is the uv-locked development environment; no ad-hoc package
+      # installation step is used to obtain the release-check dependencies.
+      - name: Build locked CI environment
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: ci
+          load: true
+          tags: django-ninja-otel-ci:release-gate
+          build-args: |
+            PYTHON_VERSION=${{ env.PYTHON_VERSION }}
+          provenance: false
+
+      - name: Self-test release gate checks
+        run: >-
+          docker run --rm django-ninja-otel-ci:release-gate
+          python scripts/check-release.py --self-test
 
       - name: Check tag matches package metadata
         id: metadata
@@ -38,18 +74,21 @@ jobs:
         run: |
           set -euo pipefail
           output="$(docker run --rm \
-            --volume "$PWD:/repo:ro" \
-            --workdir /repo \
             --env TAG \
-            python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2 \
-            sh -c 'python -m pip install --quiet --no-cache-dir "packaging==26.3" && python scripts/check-release.py --tag "$TAG" --pyproject pyproject.toml')"
+            django-ninja-otel-ci:release-gate \
+            python scripts/check-release.py --tag "$TAG" --pyproject pyproject.toml)"
           printf '%s\n' "$output"
           printf '%s\n' "$output" >> "$GITHUB_OUTPUT"
 
   ci:
     name: Reusable CI on tagged commit
     needs: release-gate
-    uses: ./.github/workflows/ci.yml
+    if: >-
+      needs.release-gate.result == 'success' &&
+      github.event_name == 'push' &&
+      github.ref_type == 'tag' &&
+      startsWith(github.ref, 'refs/tags/v')
+    uses: $/.github/workflows/ci.yml
     with:
       ref: ${{ github.sha }}
     permissions:
@@ -58,14 +97,20 @@ jobs:
   publish-testpypi:
     name: Publish prerelease to TestPyPI
     needs: [release-gate, ci]
-    if: needs.release-gate.outputs.prerelease == 'true'
-    runs-on: ubuntu-latest
+    if: >-
+      needs.release-gate.result == 'success' &&
+      needs.ci.result == 'success' &&
+      github.event_name == 'push' &&
+      github.ref_type == 'tag' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      needs.release-gate.outputs.prerelease == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     environment:
       name: testpypi
       url: https://test.pypi.org/project/django-api-opentelemetry/
     permissions:
-      id-token: write
-      attestations: write
+      id-token: write  # PyPA OIDC trusted publishing and PEP 740 attestations
     steps:
       - name: Download checked distributions
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -91,14 +136,20 @@ jobs:
   publish-pypi:
     name: Publish stable release to PyPI
     needs: [release-gate, ci]
-    if: needs.release-gate.outputs.prerelease != 'true'
-    runs-on: ubuntu-latest
+    if: >-
+      needs.release-gate.result == 'success' &&
+      needs.ci.result == 'success' &&
+      github.event_name == 'push' &&
+      github.ref_type == 'tag' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      needs.release-gate.outputs.prerelease == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     environment:
       name: pypi
       url: https://pypi.org/project/django-api-opentelemetry/
     permissions:
-      id-token: write
-      attestations: write
+      id-token: write  # PyPA OIDC trusted publishing and PEP 740 attestations
     steps:
       - name: Download checked distributions
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

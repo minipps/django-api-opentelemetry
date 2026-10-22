@@ -16,26 +16,33 @@ permissions:
   contents: read
 
 concurrency:
+  # The caller name is part of the group in a reusable workflow, so the
+  # ci-* callee namespace cannot share a group with the release-* caller.
+  # Tag-triggered CI never cancels an in-progress release validation.
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 env:
   PYTHON_VERSION: "3.14"
-  UV_VERSION: "0.13.5"
 
 jobs:
   lint:
     name: Compose, lint and type checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
 
       - name: Validate Compose configuration
         run: docker compose config --quiet
@@ -49,12 +56,9 @@ jobs:
           tags: django-ninja-otel-ci:lint
           build-args: |
             PYTHON_VERSION=${{ env.PYTHON_VERSION }}
-            UV_VERSION=${{ env.UV_VERSION }}
-          cache-from: type=gha,scope=ci-3.14
-          cache-to: type=gha,mode=max,scope=ci-3.14
           provenance: false
 
-      - name: Run lint, type, self-checks and default-environment pytest
+      - name: Run lint, security, self-checks and default-environment pytest
         run: >-
           docker run --rm django-ninja-otel-ci:lint
           bash -c 'scripts/check-dist.py --self-test &&
@@ -63,7 +67,8 @@ jobs:
 
   tests:
     name: Python ${{ matrix.python-version }} / Django ${{ matrix.django }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -75,9 +80,13 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
 
       - name: Build test image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -88,21 +97,29 @@ jobs:
           tags: django-ninja-otel-ci:py${{ matrix.python-version }}
           build-args: |
             PYTHON_VERSION=${{ matrix.python-version }}
-            UV_VERSION=${{ env.UV_VERSION }}
-          cache-from: type=gha,scope=ci-${{ matrix.python-version }}
-          cache-to: type=gha,mode=max,scope=ci-${{ matrix.python-version }}
+          cache-from: type=gha,scope=ci-tests-py${{ matrix.python-version }}
+          cache-to: type=gha,mode=max,scope=ci-tests-py${{ matrix.python-version }}
           provenance: false
 
       - name: Run compatibility test environment
+        env:
+          IMAGE_TAG: django-ninja-otel-ci:py${{ matrix.python-version }}
+          COMPAT_EXTRAS: ninja,drf,otlp
+          COMPAT_DJANGO: Django~=${{ matrix.django }}.0
+          COMPAT_NINJA: django-ninja==1.7.1
+          COMPAT_DRF: djangorestframework==3.18.3
         run: |
           set -euo pipefail
           mkdir -p test-results
           chmod 0777 test-results
           docker run --rm \
             --volume "$PWD/test-results:/workspace/test-results" \
-            --env COMPAT_EXTRAS=ninja,drf,otlp \
-            "django-ninja-otel-ci:py${{ matrix.python-version }}" \
-            bash -c 'set -euo pipefail; scripts/compat.sh "Django~=${{ matrix.django }}.0" "django-ninja==1.7.1" "djangorestframework==3.18.3"; /tmp/compat-venv/bin/python -m pytest --junitxml=/workspace/test-results/pytest.xml'
+            --env COMPAT_EXTRAS \
+            --env COMPAT_DJANGO \
+            --env COMPAT_NINJA \
+            --env COMPAT_DRF \
+            "$IMAGE_TAG" \
+            bash -c 'set -euo pipefail; scripts/compat.sh "$COMPAT_DJANGO" "$COMPAT_NINJA" "$COMPAT_DRF"; /tmp/compat-venv/bin/python -m pytest --junitxml=/workspace/test-results/pytest.xml'
 
       - name: Upload pytest report
         if: always()
@@ -115,7 +132,8 @@ jobs:
 
   compatibility:
     name: Compatibility ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -154,9 +172,13 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
 
       - name: Build test image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -167,21 +189,25 @@ jobs:
           tags: django-ninja-otel-ci:compat-${{ matrix.python-version }}
           build-args: |
             PYTHON_VERSION=${{ matrix.python-version }}
-            UV_VERSION=${{ env.UV_VERSION }}
-          cache-from: type=gha,scope=ci-${{ matrix.python-version }}
-          cache-to: type=gha,mode=max,scope=ci-${{ matrix.python-version }}
+          cache-from: type=gha,scope=ci-tests-py${{ matrix.python-version }}
+          cache-to: type=gha,mode=max,scope=ci-tests-py${{ matrix.python-version }}
           provenance: false
 
       - name: Run compatibility test environment
+        env:
+          IMAGE_TAG: django-ninja-otel-ci:compat-${{ matrix.python-version }}
+          COMPAT_EXTRAS: ${{ matrix.extras }}
+          COMPAT_REQUIREMENTS: ${{ matrix.requirements }}
         run: |
           set -euo pipefail
           mkdir -p test-results
           chmod 0777 test-results
           docker run --rm \
             --volume "$PWD/test-results:/workspace/test-results" \
-            --env "COMPAT_EXTRAS=${{ matrix.extras }}" \
-            "django-ninja-otel-ci:compat-${{ matrix.python-version }}" \
-            bash -c 'set -euo pipefail; scripts/compat.sh ${{ matrix.requirements }}; /tmp/compat-venv/bin/python -m pytest --junitxml=/workspace/test-results/pytest.xml'
+            --env COMPAT_EXTRAS \
+            --env COMPAT_REQUIREMENTS \
+            "$IMAGE_TAG" \
+            bash -c 'set -euo pipefail; scripts/compat.sh $COMPAT_REQUIREMENTS; /tmp/compat-venv/bin/python -m pytest --junitxml=/workspace/test-results/pytest.xml'
 
       - name: Upload pytest report
         if: always()
@@ -194,16 +220,21 @@ jobs:
 
   artifacts:
     name: Build and verify distributions
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
 
       - name: Build verification image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -214,14 +245,13 @@ jobs:
           tags: django-ninja-otel-ci:artifacts
           build-args: |
             PYTHON_VERSION=${{ env.PYTHON_VERSION }}
-            UV_VERSION=${{ env.UV_VERSION }}
-          cache-from: type=gha,scope=ci-3.14
-          cache-to: type=gha,mode=max,scope=ci-3.14
           provenance: false
 
       - name: Remove stale distributions
         run: rm -rf dist
 
+      # No external cache is consumed or written here. BuildKit may reuse local
+      # layers from the verification image in this same fresh runner only.
       - name: Build wheel and sdist once
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -230,8 +260,6 @@ jobs:
           outputs: type=local,dest=dist
           build-args: |
             PYTHON_VERSION=${{ env.PYTHON_VERSION }}
-            UV_VERSION=${{ env.UV_VERSION }}
-          cache-from: type=gha,scope=ci-3.14
           provenance: false
 
       # Buildx exports dist as 0700; the runner and verifier use different UIDs.
@@ -266,7 +294,7 @@ jobs:
 
   collector-smoke:
     name: Collector smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: artifacts
     env:
@@ -277,9 +305,13 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
 
       - name: Download checked distributions
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
