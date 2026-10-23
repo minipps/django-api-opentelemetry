@@ -29,6 +29,13 @@ The following settings were applied and read back through the GitHub API on
   ruleset blocks updating and deleting those tags, including for administrators.
   An administrator must explicitly change that ruleset for an emergency repair.
 
+If a release run cannot restart, an administrator can tag reviewed `main` as
+`v<version>-recovery` and manually dispatch `release.yml` from that tag, supplying
+the original release tag as `tag`. Recovery tags do not trigger automatic
+publishing. The workflow checks out the original tag, verifies its ancestry and
+version, and runs CI on that exact commit before publishing. Dispatches from
+branches are skipped; publishing environments still accept only `v*` tags.
+
 These controls depend on trusted repository administrators, GitHub, the approved
 action publishers and package registries. Hash pinning prevents a changed tag
 from silently replacing reviewed content; it does not establish that the
