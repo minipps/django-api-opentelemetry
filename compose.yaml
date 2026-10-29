@@ -50,7 +50,7 @@ services:
     command: ["sh", "-c", "chown 10001:10001 /telemetry && chmod 0755 /telemetry"]
 
   collector:
-    image: otel/opentelemetry-collector-contrib:0.163.2@sha256:7f22d2a6748110ffb6a59bc0df448bccbf501cdb667d610ede4c61d3863d5849
+    image: otel/opentelemetry-collector-contrib:0.163.2-386@sha256:bd0aac7fc525d8016b7bba1e35287b1f3a43c1e2d52e2426e2496d8d45668784
     profiles: ["telemetry"]
     depends_on:
       collector-init:
